@@ -1,0 +1,25 @@
+services:
+  chemlink-gpu:
+    build: .
+    container_name: chemlink-gpu
+    volumes:
+      - ./:/app/chemlink:z
+    working_dir: /app/chemlink
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    networks:
+      - chemlink-network
+
+networks:
+  chemlink-network:
+    driver: bridge
