@@ -431,7 +431,7 @@ Para ilustrar el diseño modular y desacoplado propuesto para ChemLink, se prese
 
 El diagrama de contexto muestra cómo ChemLink interactúa con los usuarios (investigadores) y sistemas externos (SLURM, NAS, herramientas científicas).
 
-![Diagrama de Contexto](../images/c1model.drawio.png)
+![Diagrama de Contexto](../informes/images/c1model.drawio.png)
 
 **Figura 1: Nivel 1 - Contexto del Sistema ChemLink**
 
@@ -447,7 +447,7 @@ Este nivel representa:
 
 El diagrama de contenedores descompone ChemLink en sus componentes principales y muestra cómo se comunican entre sí.
 
-![Diagrama de Contenedores](../images/containermodel.drawio.png)
+![Diagrama de Contenedores](../informes/images/containermodel.drawio.png)
 
 **Figura 2: Nivel 2 - Contenedores del Sistema**
 
@@ -464,7 +464,7 @@ Este nivel muestra:
 
 El diagrama de componentes profundiza en la estructura interna de cada contenedor, mostrando los módulos específicos y sus responsabilidades.
 
-![Diagrama de Componentes](../images/Componentmodel.drawio.png)
+![Diagrama de Componentes](../informes/images/Componentmodel.drawio.png)
 
 **Figura 3: Nivel 3 - Componentes Detallados**
 
@@ -480,7 +480,7 @@ Este nivel detalla:
 
 El diagrama de código muestra la implementación a nivel de clases, interfaces y relaciones entre objetos.
 
-![Diagrama de Código](../images/Codediagram.drawio.png)
+![Diagrama de Código](../informes/images/Codediagram.drawio.png)
 
 **Figura 4: Nivel 4 - Estructura de Clases**
 
