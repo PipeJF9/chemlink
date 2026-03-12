@@ -1,4 +1,24 @@
 # Cronograma de Desarrollo basado en Prototipos
+## Malla temporal de desarrollo
+
+Representación gráfica del cronograma del proyecto basada en los prototipos definidos para el desarrollo de ChemLink.
+
+```
+Semanas →     4     5     6     7     8     9     10    11    12    13    14    15
+              │     │     │     │     │     │     │     │     │     │     │     │
+
+Prototipo 1   █████████████
+CLI + Infraestructura
+
+Prototipo 2                █████████████████
+Pipeline Docking Local
+
+Prototipo 3                                 ██████████████████
+Cluster + SLURM + NAS
+
+Prototipo 4                                                   ██████████████████
+Análisis y Optimización
+```
 
 ## Prototipo 1 — CLI Base + Infraestructura (Semanas 4–6)
 
