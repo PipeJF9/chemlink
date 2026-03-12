@@ -4,7 +4,7 @@
 
 ---
 
-## 👥 Autores
+## Autores
 
 - **Juan Felipe Santos Rodríguez**
 - **Samuel Matiz García**
@@ -19,7 +19,7 @@ Barranquilla, Colombia
 
 ---
 
-## 📋 Información del Documento
+## Información del Documento
 
 - **Título**: ChemLink: Plataforma de Orquestación para Docking Molecular en Entornos HPC
 - **Tipo**: Informe Técnico Número I - Propuesta del Proyecto
@@ -33,7 +33,7 @@ Barranquilla, Colombia
 
 ---
 
-## 📑 Tabla de Contenidos
+## Tabla de Contenidos
 
 1. [Introducción](#-introducción)
 2. [Planteamiento del Problema](#-planteamiento-del-problema)
@@ -52,7 +52,7 @@ Barranquilla, Colombia
 
 ---
 
-## 📖 Introducción
+## Introducción
 
 En las últimas décadas, la bioinformática y la química computacional se han consolidado como pilares fundamentales en el descubrimiento racional de fármacos y en la comprensión de mecanismos moleculares complejos. Estas disciplinas permiten modelar, simular y analizar interacciones biológicas a nivel atómico mediante herramientas computacionales avanzadas, reduciendo significativamente los costos y tiempos asociados a la experimentación exclusivamente experimental.
 
@@ -85,7 +85,7 @@ No obstante, en muchos entornos académicos y de investigación, la ejecución d
 
 ---
 
-## 🔴 Planteamiento del Problema
+## Planteamiento del Problema
 
 En los entornos académicos donde se desarrollan estudios de docking molecular, la ejecución de experimentos computacionales suele depender de una integración manual y fragmentada de múltiples herramientas. Aunque existen soluciones robustas para el cálculo molecular, como **AutoDock-GPU** [1], y gestores de colas ampliamente adoptados como **SLURM** [2], su articulación operativa dentro de un flujo experimental coherente no se encuentra formalizada ni automatizada.
 
@@ -108,31 +108,31 @@ La integración entre herramientas de cálculo, gestión de recursos HPC y almac
 
 Esta fragmentación técnica genera múltiples efectos negativos:
 
-#### ⏱️ Retrasos Operativos
+#### Retrasos Operativos
 - Retrasos en los ciclos de experimentación debido a errores de configuración y reenvío de tareas
 
-#### 🔄 Pérdida de Reproducibilidad
+#### Pérdida de Reproducibilidad
 - Pérdida de reproducibilidad al no existir trazabilidad formal de parámetros, versiones y resultados
 
-#### 👨‍🔬 Sobrecarga Técnica
+#### Sobrecarga Técnica
 - Sobrecarga técnica en los investigadores, quienes deben dedicar tiempo significativo a tareas operativas en lugar de análisis científico
 
-#### 📊 Dificultad de Escalabilidad
+#### Dificultad de Escalabilidad
 - Dificultad para escalar experimentos cuando se requiere ejecutar múltiples simulaciones en paralelo dentro del clúster
 
 ### Consecuencias
 
 Como consecuencia, el proceso de investigación computacional se vuelve:
 
-- ❌ **Menos eficiente**
-- ❌ **Más propenso a inconsistencias**
-- ❌ **Dependiente del conocimiento técnico individual**
+- **Menos eficiente**
+- **Más propenso a inconsistencias**
+- **Dependiente del conocimiento técnico individual**
 
 Esto limita el aprovechamiento óptimo de la infraestructura HPC disponible.
 
 ---
 
-## ✨ Justificación
+## Justificación
 
 El desarrollo de herramientas que faciliten la gestión de experimentos computacionales se ha vuelto fundamental para aprovechar adecuadamente las infraestructuras de computación de alto rendimiento disponibles en entornos académicos.
 
@@ -162,15 +162,15 @@ Una solución de este tipo contribuiría a:
 
 De esta manera, el proyecto busca aportar una herramienta que facilite la ejecución de estudios computacionales:
 
-- ✅ Más eficientes
-- ✅ Más escalables
-- ✅ Más reproducibles
+- Más eficientes
+- Más escalables
+- Más reproducibles
 
 ...dentro del ámbito académico.
 
 ---
 
-## 🔧 Restricciones y Supuestos de Diseño
+## Restricciones y Supuestos de Diseño
 
 El desarrollo del sistema considera algunas restricciones técnicas y operativas que pueden influir en su implementación:
 
@@ -203,7 +203,7 @@ El desarrollo del sistema considera algunas restricciones técnicas y operativas
 
 ---
 
-## 🎯 Objetivos
+## Objetivos
 
 ### Objetivo 1: Diseñar Arquitectura Modular
 
@@ -271,7 +271,7 @@ El desarrollo del sistema considera algunas restricciones técnicas y operativas
 
 ---
 
-## 📐 Alcance
+## Alcance
 
 El proyecto consiste en diseñar e implementar una **plataforma científica basada en línea de comandos (CLI)**, modular y orientada a entornos de cómputo de alto rendimiento (HPC), que permita automatizar y optimizar la ejecución de experimentos de docking molecular y dinámica molecular dentro de un clúster distribuido.
 
@@ -288,21 +288,21 @@ La plataforma integrará:
 
 Asimismo, el sistema permitirá:
 
-- ✅ Organización y trazabilidad de los experimentos realizados
-- ✅ Validación básica de resultados
-- ✅ Generación automática de reportes reproducibles
+- Organización y trazabilidad de los experimentos realizados
+- Validación básica de resultados
+- Generación automática de reportes reproducibles
 
 ### Objetivos del Alcance
 
 Con esto se busca:
 
-- 🎯 Mejorar la eficiencia computacional
-- 🎯 Facilitar la gestión de experimentos científicos
-- 🎯 Proporcionar una base escalable para el desarrollo del ecosistema Chemlab
+- Mejorar la eficiencia computacional
+- Facilitar la gestión de experimentos científicos
+- Proporcionar una base escalable para el desarrollo del ecosistema Chemlab
 
 ---
 
-## 📚 Estado del Arte y Soluciones Relacionadas
+## Estado del Arte y Soluciones Relacionadas
 
 ### 1. Herramientas de Docking Molecular
 
@@ -393,9 +393,9 @@ Desde una perspectiva arquitectónica, se observa que:
 | **Monitoreo** | Prometheus | Recolección y análisis de métricas del sistema |
 
 **Ninguna integra de manera nativa**:
-- ❌ Almacenamiento científico estructurado (NAS)
-- ❌ Monitoreo orientado a experimentos
-- ❌ Control de reproducibilidad específico para docking académico
+- Almacenamiento científico estructurado (NAS)
+- Monitoreo orientado a experimentos
+- Control de reproducibilidad específico para docking académico
 
 ### Vacío Identificado
 
@@ -414,16 +414,16 @@ Esta fragmentación implica que el investigador debe asumir la responsabilidad d
 
 Por tanto, el vacío identificado no corresponde a la ausencia de herramientas de cálculo eficientes, sino a **la falta de una arquitectura integradora** que articule:
 
-- ✅ Computación científica
-- ✅ Gestión HPC
-- ✅ Almacenamiento centralizado
-- ✅ Monitoreo experimental
+- Computación científica
+- Gestión HPC
+- Almacenamiento centralizado
+- Monitoreo experimental
 
 ...bajo un modelo coherente, modular y reproducible.
 
 ---
 
-## 🏗️ Diagramas de Arquitectura (Modelo C4)
+## Diagramas de Arquitectura (Modelo C4)
 
 Para ilustrar el diseño modular y desacoplado propuesto para ChemLink, se presenta a continuación el **Modelo C4** de la plataforma. Este modelo detalla la estructura desde el contexto de alto nivel hasta la implementación a nivel de código.
 
@@ -502,14 +502,14 @@ El Modelo C4 proporciona una visión completa de la arquitectura de ChemLink en 
 4. **Código**: Implementación detallada a nivel de clases
 
 Esta arquitectura modular permite:
-- ✅ Separación clara de responsabilidades
-- ✅ Facilidad de mantenimiento y extensión
-- ✅ Testeabilidad independiente de componentes
-- ✅ Escalabilidad del sistema
+- Separación clara de responsabilidades
+- Facilidad de mantenimiento y extensión
+- Testeabilidad independiente de componentes
+- Escalabilidad del sistema
 
 ---
 
-## 📋 Requerimientos Preliminares
+## Requerimientos Preliminares
 
 ### Requerimientos Funcionales
 
@@ -585,42 +585,42 @@ El sistema debe satisfacer los siguientes criterios de calidad:
 
 ---
 
-## ✅ Criterios de Aceptación Inicial
+## Criterios de Aceptación Inicial
 
 Para considerar la primera versión del sistema como funcional, debe cumplir los siguientes criterios:
 
 ### CA1: Ejecución Completa con Comando Único
-- ✅ El sistema ejecuta un docking completo con un solo comando
+- El sistema ejecuta un docking completo con un solo comando
 - El comando debe ser del tipo: `chemlink run --ligands <dir> --receptor <file>`
 
 ### CA2: Envío Correcto a SLURM
-- ✅ El job es enviado correctamente a SLURM
+- El job es enviado correctamente a SLURM
 - Se genera script sbatch válido
 - El job aparece en la cola (`squeue`)
 
 ### CA3: Monitoreo Automático
-- ✅ El estado puede ser consultado automáticamente
+- El estado puede ser consultado automáticamente
 - El sistema detecta completitud o fallos
 - Provee información actualizada del progreso
 
 ### CA4: Almacenamiento Correcto
-- ✅ Los resultados se almacenan correctamente en NAS
+- Los resultados se almacenan correctamente en NAS
 - Estructura de directorios organizada
 - Archivos de salida accesibles
 
 ### CA5: Generación de Reporte
-- ✅ Se genera un reporte estructurado al finalizar
+- Se genera un reporte estructurado al finalizar
 - Incluye métricas clave (afinidad, RMSD)
 - Formato legible y reproducible
 
 ### CA6: Automatización Completa
-- ✅ No se requieren intervenciones manuales intermedias
+- No se requieren intervenciones manuales intermedias
 - El flujo completo es autónomo
 - Manejo de errores sin supervisión humana
 
 ---
 
-## 📅 Plan de Trabajo
+## Plan de Trabajo
 
 El desarrollo del proyecto se organizará en **5 fases principales** distribuidas a lo largo de **12 semanas** (desde la semana 4 hasta la semana 15 del semestre académico).
 
@@ -778,7 +778,7 @@ El desarrollo del proyecto se organizará en **5 fases principales** distribuida
 
 ---
 
-## ⚠️ Riesgos del Proyecto
+## Riesgos del Proyecto
 
 El desarrollo de una plataforma científica orientada a entornos de cómputo de alto rendimiento implica ciertos riesgos técnicos y operativos que deben ser identificados y gestionados:
 
@@ -891,7 +891,7 @@ Actualizaciones o cambios en herramientas externas (AutoDock-GPU, fpocket) puede
 
 ---
 
-## 📚 Referencias Bibliográficas
+## Referencias Bibliográficas
 
 ### [1] AutoDock-GPU
 A. Santos-Martins et al., "Accelerating AutoDock4 with GPUs and Gradient-Based Local Search," *Journal of Chemical Theory and Computation*, vol. 42, no. 2, pp. 1060-1073, 2021.  
@@ -919,7 +919,7 @@ Disponible: [https://github.com/fpocket/fpocket](https://github.com/fpocket/fpoc
 
 ---
 
-## 📎 Anexos
+## Anexos
 
 ### A. Estructura de Directorios del Proyecto
 
@@ -977,9 +977,9 @@ chemlink/
 │   ├── containermodel.drawio.png
 │   ├── Componentmodel.drawio.png
 │   └── Codediagram.drawio.png
-├── informes/              # 📍 ESTE DIRECTORIO
+├── informes/              #
 │   ├── Informe_I_Chemlink.pdf
-│   └── README.md          # 📍 ESTE ARCHIVO
+│   └── README.md          # 
 ├── docker/                # Dockerfiles
 ├── scripts/               # Scripts auxiliares
 ├── pyproject.toml         # Configuración del proyecto
@@ -1047,7 +1047,7 @@ Barranquilla, Colombia
 
 ---
 
-## 📄 Contenido del PDF
+## Contenido del PDF
 
 Este README documenta completamente el contenido del archivo PDF adjunto:
 
