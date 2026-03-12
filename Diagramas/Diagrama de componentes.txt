@@ -1,0 +1,61 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor "Bioinformatics\nResearcher" as Researcher
+actor "Administrator" as Admin
+
+database "NAS Storage\n[Software System]\nShared storage system for scientific data and results" as NAS
+
+component "Autodock GPU\n[Software System]\nGPU-accelerated molecular docking engine" as Autodock
+component "Fpocket\n[Software System]\nTool for automatic detection of binding sites on proteins" as Fpocket
+component "Slurm\n[Software System]\nTask scheduler that distributes and executes jobs across cluster nodes" as Slurm
+node "Cluster HPC\n[Software System]\nDistributed infrastructure of nodes with CPU and GPU for parallel computing" as HPC
+component "Prometheus\n[Software System]\nMonitoring system that collects cluster performance metrics" as Prometheus
+
+
+package "Chemlink\n[Software System]" {
+
+component "CLI Application\n[Container]\nCommand line interface that receives parameters from the user and coordinates system execution." as CLI
+
+component "Core Engine\n[Container]\nMain engine that orchestrates the docking pipeline and coordinates the internal modules." as Engine
+
+component "HPC Job Manager\n[Container]\nModule responsible for generating and sending jobs to the cluster using SLURM." as JobManager
+
+component "Molecular Tools Adapter\n[Container]\nEncapsulates the execution of external tools such as AutoDock-GPU and Fpocket." as Adapter
+
+component "Result & Analysis\n[Container]\nProcess, analyze, and structure the results of docking." as Analysis
+
+database "Data Storage\n[Container]\nManages reading and writing of files on the cluster shared storage." as Storage
+
+}
+
+Researcher --> CLI : Run docking experiments\nand view results via CLI
+
+Admin --> Storage : Supervises executions\nmonitors resource usage\nconfigures system parameters
+
+CLI --> Engine : Invokes pipeline orchestration flow
+
+Engine --> Storage : Read and organize\ninput/output files
+
+Engine --> Analysis : Orchestrate performing\nmolecular tools
+
+Engine --> Adapter : Sends data for processing\nand analysis
+
+Engine --> JobManager : Request job submission\nand tracking
+
+Analysis --> Storage : Results and reports persist
+
+Adapter --> Autodock : Performs GPU-accelerated docking
+
+Adapter --> Fpocket : Perform active site detection
+
+Storage <--> NAS : Reads/Writes molecular\ndata and results
+
+JobManager --> Slurm : Send batch scripts\nand check job status
+
+Slurm --> HPC : Schedules jobs\non compute nodes
+
+Prometheus --> HPC : Monitor CPU, RAM,\nand GPU metrics
+
+@enduml
