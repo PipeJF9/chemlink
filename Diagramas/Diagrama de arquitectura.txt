@@ -1,0 +1,39 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor "Bioinformatics\nResearcher" as Researcher
+actor "Administrator" as Admin
+
+component "Chemlink\nCLI framework for distributed molecular modeling in HPC" as Chemlink
+
+component "Fpocket\nTool for automatic detection of binding sites on proteins" as Fpocket
+
+component "Autodock GPU\nGPU-accelerated molecular docking engine" as Autodock
+
+component "Slurm\nTask scheduler that distributes and executes jobs across cluster nodes" as Slurm
+
+node "Cluster HPC\nDistributed infrastructure of nodes with CPU and GPU for parallel computing" as HPC
+
+database "NAS Storage\nShared storage system for scientific data and results" as NAS
+
+component "Prometheus\nMonitoring system that collects cluster performance metrics" as Prometheus
+
+
+Researcher --> Chemlink : Run docking experiments\nand view results via CLI
+
+Admin --> Chemlink : Supervises executions\nmonitors resource usage\nconfigures parameters
+
+Chemlink --> Fpocket : Invokes binding site detection
+
+Chemlink --> Autodock : Executes molecular docking\nprocesses on GPU
+
+Chemlink --> Slurm : Submits jobs\nQueries job status
+
+Chemlink <--> NAS : Reads/Writes molecular\ndata and results
+
+Slurm --> HPC : Schedules jobs\non compute nodes
+
+Prometheus --> HPC : Monitor CPU, RAM,\nand GPU metrics
+
+@enduml
