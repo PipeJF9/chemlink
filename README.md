@@ -79,17 +79,9 @@ El proyecto abarca el ciclo de vida completo de ingeniería de software para Che
 *   Mantenimiento físico o actualización de hardware del cluster.
 
 ---
-
-## 5. Arquitectura del Sistema
-
-ChemLink sigue un patrón arquitectónico de **Capas (Layered Architecture)** para asegurar la mantenibilidad, testabilidad y escalabilidad futura del sistema.
-
-```mermaid
-graph TD
-    A["Capa de Presentación (CLI)"] --> B["Capa de Aplicación (Core Controller)"]
-    B --> C["Capa de Dominio (Entidades Moleculares)"]
-    B --> D["Capa de Adaptadores (External Tools)"]
-    D --> E["AutoDock-GPU / GROMACS"]
-    D --> F["OpenBabel / RDKit"]
-    B --> G["Capa de Infraestructura (HPC/System)"]
-    G --> H["Gestión de Procesos / SLURM"]
+## 5. Diagrama de Arquitectura
+![Diagrama de Arquitectura](/Diagramas/Architecture.png)
+## 6. Diagrama de Componentes
+![Diagrama de Componentes](/Diagramas/Components.png)
+## 7. Diagrama de Secuencia
+![Diagrama de Secuencia](/Diagramas/Diagrama%20de%20secuencia.png)
