@@ -205,69 +205,16 @@ El desarrollo del sistema considera algunas restricciones técnicas y operativas
 
 ## Objetivos
 
-### Objetivo 1: Diseñar Arquitectura Modular
+### Objetivo General
+Diseñar e implementar **ChemLink**, una plataforma CLI científica, modular y orientada a HPC que automatice y optimice la ejecución de experimentos de *docking* y dinámica molecular en un cluster distribuido, garantizando la gestión adaptativa de recursos (CPU/GPU), la paralelización eficiente y la trazabilidad experimental.
 
-**Diseñar** una arquitectura de software modular y desacoplada, organizada en capas (CLI, Core, Adapters y Utils), que permita:
-
-- Estructurar claramente las responsabilidades del sistema
-- Facilitar su mantenibilidad
-- Habilitar futuras extensiones dentro del ecosistema HPC del laboratorio
-
-### Objetivo 2: Automatizar Pipeline Completo
-
-**Automatizar** el pipeline completo de docking molecular, integrando:
-
-- Detección automática de sitios de unión
-- Generación dinámica de cajas de docking
-- Preparación y validación de archivos de entrada
-- Ejecución paralela del docking con GPU
-- Verificación estructurada de los resultados generados
-
-### Objetivo 3: Implementar Sistema de Ejecución Híbrido
-
-**Implementar** un sistema de ejecución paralela híbrido que permita:
-
-- Multiprocesamiento local para desarrollo y pruebas
-- Generación automática de scripts de SLURM para ejecución en clúster
-- Gestión eficiente de recursos computacionales distribuidos
-
-### Objetivo 4: Desarrollar Validación de Recursos
-
-**Desarrollar** mecanismos de validación y control de recursos computacionales que:
-
-- Evalúen la disponibilidad de CPU, memoria y GPU
-- Realicen evaluaciones antes y durante la ejecución
-- Prevengan sobrecargas del sistema
-- Optimicen la asignación de tareas
-- Garanticen la estabilidad operativa del clúster
-
-### Objetivo 5: Incorporar Tolerancia a Fallos
-
-**Incorporar** estrategias básicas de tolerancia a fallos, incluyendo:
-
-- Control de timeouts
-- Detección de ejecuciones incompletas o fallidas
-- Registro estructurado de errores
-- Asegurar la robustez del sistema ante eventos inesperados
-
-### Objetivo 6: Diseñar Módulo de Análisis
-
-**Diseñar e implementar** un módulo de análisis estructurado de resultados que permita:
-
-- Extraer automáticamente métricas relevantes (afinidad, RMSD)
-- Generar rankings globales de ligandos
-- Calcular estadísticas descriptivas
-- Exportar reportes reproducibles
-- Facilitar la trazabilidad científica
-
-### Objetivo 7: Evaluar Desempeño del Sistema
-
-**Evaluar** el desempeño del sistema mediante:
-
-- Comparación entre ejecución secuencial y distribuida
-- Medición de métricas: tiempo total de ejecución, speedup paralelo, eficiencia computacional
-- Análisis de tasa de éxito experimental
-- Validación del impacto de la solución en el entorno HPC del laboratorio
+### Objetivos Específicos
+1.  **Arquitectura Modular:** Diseñar una arquitectura de software en capas (*CLI, Core, Adapters, Utils*) que desacople la lógica de negocio de las herramientas científicas subyacentes.
+2.  **Automatización del Pipeline:** Implementar la automatización *end-to-end*: detección automática de sitios de unión, generación dinámica de cajas, preparación de inputs y ejecución.
+3.  **Ejecución Híbrida:** Desarrollar un sistema que soporte tanto el multiprocesamiento local como la generación automática de scripts de trabajo para gestores de colas (SLURM) en el cluster.
+4.  **Gestión de Recursos y Tolerancia a Fallos:** Integrar validaciones de hardware (disponibilidad de GPU/Memoria) y mecanismos de recuperación ante *timeouts* o errores de ejecución.
+5.  **Análisis Estructurado:** Implementar módulos de post-procesamiento para el cálculo de afinidad, RMSD y generación de reportes (CSV, JSON, Markdown).
+6.  **Validación de Desempeño:** Evaluar el impacto de la solución mediante métricas de *Speedup*, Eficiencia Computacional y Tasa de Éxito frente al método manual.
 
 ---
 
