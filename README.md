@@ -79,9 +79,194 @@ El proyecto abarca el ciclo de vida completo de ingeniería de software para Che
 *   Mantenimiento físico o actualización de hardware del cluster.
 
 ---
-## 5. Diagrama de Arquitectura
+## 5. Arquitectura del Sistema
+### Descripción General
+
+ChemLink se basa en una **Arquitectura Modular Orientada a Componentes y Capas de Orquestación**. A diferencia de los sistemas monolíticos, separa las responsabilidades en módulos independientes que se comunican de forma jerárquica para maximizar la escalabilidad.
+
+- **Tipo de Arquitectura:** CLI (Command Line Interface) con Orquestación de Workflows.
+- **Ámbito de Aplicación:** Diseñado para entornos locales y clústeres de alto rendimiento (HPC), actuando como un middleware entre el investigador y las herramientas bioinformáticas.
+- **Enfoque de la Solución:** Se centra en la **Separación de Preocupaciones (SoC)** y la **Abstracción de Infraestructura**, permitiendo que la lógica química sea independiente de la configuración del servidor.
+- **Relación con la Alternativa Seleccionada:** El sistema reemplaza los flujos manuales propensos a errores por una automatización basada en Ansible y gestores de tareas como Slurm, optimizando la tasa de éxito ($S_{success}$).
+
+Además, ChemLink se plantea como un **orquestador de infraestructura distribuida ligera**, orientado a clústeres HPC de pequeña escala, donde las decisiones arquitectónicas se validan mediante experimentos A/B.
+
+---
+
+### Componentes del Sistema e Interacción
+
+El sistema se organiza en cinco bloques funcionales que interactúan de forma descendente:
+
+#### Capas Funcionales
+
+1. **Capa de Interfaz (CLI & Workflows):** Punto de entrada del usuario. Traduce comandos de alto nivel en flujos de trabajo coordinados.  
+2. **Capa de Negocio (Pipelines):** Orquesta los pasos lógicos del docking (preparación → ejecución → análisis).  
+3. **Capa de Adaptación (Adapters):** Wrappers que estandarizan la comunicación con herramientas externas como `AutoDock-GPU` y `fpocket`.  
+4. **Servicios de Soporte (Storage & Utils):** Gestión de persistencia en NAS, procesamiento químico y validación de datos.  
+5. **Capa de Infraestructura (HPC):** Abstracción de bajo nivel para comunicación SSH, configuración de red y gestión de nodos.  
+
+---
+
+### Marco de Validación y Métricas
+
+La arquitectura no solo es funcional, sino que su diseño ha sido validado mediante un **marco experimental cuantitativo** comparando dos configuraciones (A vs B).
+
+#### Métricas de Evaluación
+
+##### Rendimiento
+
+| Métrica   | Definición                                                      | Unidad   |
+|----------|------------------------------------------------------------------|----------|
+| $T_{setup}$ | Tiempo total hasta conectividad funcional                     | segundos |
+| $T_{exec}$  | Tiempo promedio de ejecución de una operación                 | segundos |
+
+##### Fiabilidad
+
+| Métrica       | Definición                     | Fórmula                                      |
+|--------------|--------------------------------|----------------------------------------------|
+| $E_{rate}$    | Tasa de error                  | $(n_{errores} / n_{ejecuciones}) \times 100$ |
+| $S_{success}$ | Tasa de éxito del setup        | $(n_{setups\_exitosos} / n_{total}) \times 100$ |
+
+##### Usabilidad
+
+| Métrica     | Definición                                      | Escala         |
+|------------|--------------------------------------------------|----------------|
+| $N_{steps}$ | Número de comandos para completar el setup       | entero         |
+| $C_{load}$  | Carga cognitiva percibida                        | Likert (1–5)   |
+| $T_{learn}$ | Tiempo de aprendizaje del sistema                | minutos        |
+
+##### Complejidad del Sistema
+
+| Métrica         | Definición                                  |
+|-----------------|----------------------------------------------|
+| $LOC$           | Líneas de código por módulo                  |
+| $M_{modularity}$| Número de módulos independientes             |
+| $D_{coupling}$  | Número de dependencias entre módulos         |
+
+##### Robustez
+
+| Métrica            | Definición                          | Fórmula                                      |
+|--------------------|--------------------------------------|----------------------------------------------|
+| $R_{recovery}$     | Capacidad de recuperación           | errores recuperados / errores totales        |
+| $F_{repeatability}$| Reproducibilidad del sistema        | ejecuciones consistentes / total             |
+
+---
+
+#### Decisiones Arquitectónicas Clave
+
+Las siguientes decisiones fueron evaluadas experimentalmente:
+
+##### Orquestación del sistema
+
+| Configuración | Descripción                              |
+|--------------|------------------------------------------|
+| A            | Ejecución directa de comandos            |
+| B            | Automatización mediante Ansible          |
+
+Métricas: $T_{setup}$, $E_{rate}$, $LOC$, $R_{recovery}$
+
+##### Configuración de red
+
+| Configuración | Descripción                     |
+|--------------|---------------------------------|
+| A            | NetworkManager (nmcli)          |
+| B            | Netplan                         |
+
+Métricas: $E_{rate}$, $T_{setup}$, $F_{repeatability}$
+
+##### Descubrimiento de nodos
+
+| Configuración | Descripción                          |
+|--------------|--------------------------------------|
+| A            | Entrada manual de IP                 |
+| B            | Descubrimiento automático con Nmap   |
+
+Métricas: $N_{steps}$, $T_{setup}$, Precisión, Recall
+
+##### Configuración SSH
+
+| Configuración | Descripción                      |
+|--------------|----------------------------------|
+| A            | ssh-copy-id                     |
+| B            | Configuración manual de claves  |
+
+Métricas: $E_{rate}$, $T_{exec}$, $R_{recovery}$
+
+##### Nivel de abstracción del CLI
+
+| Configuración | Descripción                          |
+|--------------|--------------------------------------|
+| A            | Comandos de bajo nivel               |
+| B            | Comandos de alto nivel (`cluster init`) |
+
+Métricas: $N_{steps}$, $C_{load}$, $T_{learn}$
+
+##### Gestión del estado del clúster
+
+| Configuración | Descripción                  |
+|--------------|------------------------------|
+| A            | Estado centralizado          |
+| B            | Estado distribuido           |
+
+Métricas: $T_{exec}$, $F_{repeatability}$, $D_{coupling}$
+
+---
+
+### Metodología Experimental
+
+#### Configuración Experimental
+
+| Parámetro         | Valor        |
+|------------------|-------------|
+| Número de nodos  | 2–3         |
+| Red              | 10.0.0.0/24 |
+| Sistema operativo| Linux       |
+| Repeticiones     | ≥ 30        |
+
+#### Procedimiento
+
+| Paso | Descripción                 |
+|------|-----------------------------|
+| 1    | Reset del entorno           |
+| 2    | Ejecución del setup         |
+| 3    | Registro de métricas        |
+| 4    | Repetición del experimento  |
+
+#### Estructura de Registro
+
+| Campo      | Descripción              |
+|------------|--------------------------|
+| timestamp  | Marca temporal           |
+| mode       | Configuración (A o B)    |
+| $T_{setup}$| Tiempo total             |
+| $E_{rate}$ | Tasa de error            |
+| steps      | Número de pasos          |
+
+---
+
+### Análisis de Resultados
+
+| Método     | Aplicación                         |
+|------------|-----------------------------------|
+| t-test     | Comparación de medias             |
+| ANOVA      | Comparación entre múltiples grupos|
+| Correlación| Relación entre métricas           |
+
+---
+
+### Validación de Comportamiento (Flujo de Datos)
+
+La integridad del sistema se verifica a través de la interacción entre módulos. Por ejemplo, en el proceso de **Preparación de Ligandos**:
+
+1. El **Pipeline** solicita archivos al módulo **Storage**.  
+2. **Utils** realiza el procesamiento químico aislado (limpieza de moléculas).  
+3. El **Adapter** de AutoDockTools genera los archivos `.pdbqt`.  
+4. El **HPC Manager** distribuye los archivos a los nodos del clúster si es necesario.  
+5. El sistema de **Logging** registra la trazabilidad completa, asegurando la reproducibilidad.  
+
+## 6. Diagrama de Arquitectura
 ![Diagrama de Arquitectura](/Diagramas/Architecture.png)
-## 6. Diagrama de Componentes
+## 7. Diagrama de Componentes
 ![Diagrama de Componentes](/Diagramas/Components.png)
-## 7. Diagrama de Secuencia
+## 8. Diagrama de Secuencia
 ![Diagrama de Secuencia](/Diagramas/Diagrama%20de%20secuencia.png)
