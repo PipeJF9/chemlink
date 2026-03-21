@@ -63,7 +63,7 @@ RUN git clone https://github.com/openbabel/openbabel.git /tmp/openbabel \
         -DRUN_SWIG=ON \
         -DENABLE_PYTHON=ON \
         -DPYTHON_EXECUTABLE=/usr/bin/python3.12 \
-    && make -j"$(nproc)" \
+    && make -j2 \
     && make install \
     && ldconfig
 
@@ -114,7 +114,7 @@ RUN apt-get update && apt-get install -y \
 RUN wget -q https://ftp.gromacs.org/gromacs/gromacs-2024.4.tar.gz -O /tmp/gromacs.tar.gz \
     && cd /tmp && tar xzf gromacs.tar.gz \
     && cd gromacs-2024.4 && mkdir build && cd build \
-    && cmake .. -DGMX_BUILD_OWN_FFTW=ON -DREGRESSIONTEST_DOWNLOAD=ON \
+    && cmake .. -DGMX_BUILD_OWN_FFTW=ON -DREGRESSIONTEST_DOWNLOAD=OFF \
        -DGMX_GPU=CUDA -DGMX_MPI=ON -DGMX_SIMD=AVX2_256 \
        -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
     && make -j$(nproc) && make install \
