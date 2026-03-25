@@ -1,6 +1,6 @@
 import os
 from .utils import calculate_nsteps, update_md_nsteps, check_gmx_installation
-from .steps import TopologyStep 
+from .steps import TopologyStep, SolvationStep
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -37,9 +37,12 @@ class DynamicsPipeline:
             topo = TopologyStep(self.config, self.gmx_bin)
             topo.run()
 
-            # 2. Aquí irían los siguientes pasos (Solvatación, EM, etc.)
-            # print("\n[Paso 2/5] Solvatando sistema...")
-            # ...
+            # 2. Ejecutar Paso 2: Solvatación
+            print("\n[Paso 2/5] Solvatando sistema...")
+            solv = SolvationStep(self.config, self.gmx_bin)
+            solv.run()
+
+            # x. Ejecutar siguientes pasos: EnergyMin, Equilibration, Production (próximamente)
 
             print("\n[✓] ¡Proceso de Dinámica finalizado con éxito!")
         except Exception as e:
