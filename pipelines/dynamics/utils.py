@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 
 def calculate_nsteps(ns_time, dt=0.002): # Convierte nanosegundos a pasos de GROMACS.
     # 1 ns = 1000 ps. nsteps = (ns * 1000) / dt
@@ -37,3 +38,15 @@ def update_md_nsteps(mdp_path, nsteps): #Actualiza valor de nsteps para producci
 
     print(f"[✓] Archivo {os.path.basename(mdp_path)} actualizado a {nsteps} pasos.")
     return True
+
+def check_gmx_installation(): # Verifica si gmx o gmx_mpi están disponibles en el sistema
+    # Priorizamos gmx_mpi si
+    for binary in ["gmx_mpi", "gmx"]:
+        if shutil.which(binary):
+            print(f"[✓] GROMACS detectado: {binary}")
+            return binary
+
+    raise EnvironmentError(
+        "(!) Error: No se encontró GROMACS (gmx o gmx_mpi) instalado en el PATH del sistema.\n"
+        "Asegúrese de que GROMACS esté instalado y cargado correctamente."
+    )

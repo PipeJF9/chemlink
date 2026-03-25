@@ -1,6 +1,6 @@
 import os
-from .utils import calculate_nsteps, update_md_nsteps
-#from .steps import TopologyStep 
+from .utils import calculate_nsteps, update_md_nsteps, check_gmx_installation
+from .steps import TopologyStep 
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -14,6 +14,7 @@ class DynamicsPipeline:
         self.config = config
         # Ruta del md.mdp (conf de producción)
         self.md_mdp_path = "/home/ChemFusion/input/Dinamica/md.mdp"
+        self.gmx_bin = check_gmx_installation()
 
     def _prepare_time(self):
         print(f"\n[ChemLink] Configurando simulación para {self.config['ns_time']} ns...")
@@ -33,7 +34,7 @@ class DynamicsPipeline:
         try:
             # 1. Ejecutar Paso 1: Topología
             print("\n[Paso 1/5] Generando Topología...")
-            topo = TopologyStep(self.config)
+            topo = TopologyStep(self.config, self.gmx_bin)
             topo.run()
 
             # 2. Aquí irían los siguientes pasos (Solvatación, EM, etc.)
