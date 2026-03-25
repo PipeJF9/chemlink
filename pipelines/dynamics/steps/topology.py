@@ -3,13 +3,9 @@ import os
 
 class TopologyStep:
     def __init__(self, config, gmx_bin):
-        """
-        Recibe la configuración del pipeline.
-        Utiliza el PDB de entrada y define dónde se guardará la topología.
-        """
+
         self.config = config
         self.gmx_bin = gmx_bin
-        # Asegúrate de que este comando esté en tu PATH o ajusta la ruta aquí.
         
         # Definimos los nombres de los archivos de salida en el directorio de trabajo
         self.output_gro = os.path.join(self.config["work_dir"], "processed_complex.gro")
@@ -18,8 +14,7 @@ class TopologyStep:
 
     def run(self):
         print(f"[*] Ejecutando pdb2gmx para: {self.config['pdb_input']}")
-        
-        # Construcción del comando siguiendo la lógica del Dinamica.sh
+    
         # -ff amber99sb-ildn: Campo de fuerza (puedes parametrizarlo luego)
         # -water tip3p: Modelo de agua
         # -ignh: Ignorar hidrógenos presentes para evitar errores de nomenclatura

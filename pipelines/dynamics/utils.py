@@ -40,7 +40,7 @@ def update_md_nsteps(mdp_path, nsteps): #Actualiza valor de nsteps para producci
     return True
 
 def check_gmx_installation(): # Verifica si gmx o gmx_mpi están disponibles en el sistema
-    # Priorizamos gmx_mpi si
+    # Priorizamos gmx_mpi
     for binary in ["gmx_mpi", "gmx"]:
         if shutil.which(binary):
             print(f"[✓] GROMACS detectado: {binary}")

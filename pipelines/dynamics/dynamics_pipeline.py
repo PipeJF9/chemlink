@@ -13,7 +13,7 @@ class DynamicsPipeline:
         """
         self.config = config
         # Ruta del md.mdp (conf de producción)
-        self.md_mdp_path = "/home/ChemFusion/input/Dinamica/md.mdp"
+        self.md_mdp_path = "../../data/input/dynamics/md.mdp"
         self.gmx_bin = check_gmx_installation()
 
     def _prepare_time(self):

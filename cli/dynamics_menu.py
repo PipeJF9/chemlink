@@ -13,15 +13,16 @@ def run_dynamics_menu():
         except ValueError:
             print("(!) Por favor, ingrese un número válido.")
 
+    pdb_file = input("➤ Ingrese el nombre del archivo PDB (sin extensión): ")
+
     num_threads = 8 
-    pdb_path = "../../data/input"
 
     # 2. Configuracion que tomara el pipeline
     config = {
         "ns_time": ns_time,
         "threads": num_threads,
-        "pdb_input": pdb_path,
-        "work_dir": "../../data/output"
+        "pdb_input": f"../data/input/dynamics/{pdb_file}.pdb",
+        "work_dir": "../data/output/dynamics"
     }
 
     # 3. EJECUTAR PIPELINE
