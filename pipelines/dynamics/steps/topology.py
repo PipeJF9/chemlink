@@ -24,7 +24,7 @@ class TopologyStep:
             "-o", self.output_gro,
             "-p", self.output_top,
             "-i", self.output_itp,
-            "-ff", "amber99sb-ildn", 
+            "-ff", "amber03", 
             "-water", "tip3p",
             "-ignh"
         ]
