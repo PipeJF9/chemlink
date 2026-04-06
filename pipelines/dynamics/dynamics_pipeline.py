@@ -1,6 +1,6 @@
 import os
 from .utils import calculate_nsteps, update_md_nsteps, check_gmx_installation
-from .steps import TopologyStep, SolvationStep
+from .steps import TopologyStep, SolvationStep, IonsStep
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -12,7 +12,7 @@ class DynamicsPipeline:
                 - threads (int)
         """
         self.config = config
-        # Ruta del md.mdp (conf de producción)
+
         self.md_mdp_path = "data/input/dynamics/md.mdp"
         self.gmx_bin = check_gmx_installation()
 
@@ -33,14 +33,19 @@ class DynamicsPipeline:
 
         try:
             # 1. Ejecutar Paso 1: Topología
-            print("\n[Paso 1/5] Generando Topología...")
+            print("\n[Paso 1/6] Generando Topología...")
             topo = TopologyStep(self.config, self.gmx_bin)
             topo.run()
 
             # 2. Ejecutar Paso 2: Solvatación
-            print("\n[Paso 2/5] Solvatando sistema...")
+            print("\n[Paso 2/6] Solvatando sistema...")
             solv = SolvationStep(self.config, self.gmx_bin)
             solv.run()
+
+            # 3. Ejecutar Paso 3: Iones
+            print("\n[Paso 3/6] Añadiendo iones para neutralizar carga...")
+            ions = IonsStep(self.config, self.gmx_bin)
+            ions.run()
 
             # x. Ejecutar siguientes pasos: EnergyMin, Equilibration, Production (próximamente)
 

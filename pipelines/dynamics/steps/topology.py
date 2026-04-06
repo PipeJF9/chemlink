@@ -14,9 +14,6 @@ class TopologyStep:
     def run(self):
         print(f"[*] Paso 1: Ejecutando pdb2gmx para: {self.config['pdb_input']}")
     
-        # -ff amber99sb-ildn: Campo de fuerza (puedes parametrizarlo luego)
-        # -water tip3p: Modelo de agua
-        # -ignh: Ignorar hidrógenos presentes para evitar errores de nomenclatura
         command_cmd = [
             self.gmx_bin, "pdb2gmx",
             "-f", self.config["pdb_input"],
@@ -30,7 +27,7 @@ class TopologyStep:
 
         try:
             # Ejecuta el comando
-            result = subprocess.run(command_cmd, check=True, capture_output=True, text=True)
+            subprocess.run(command_cmd, check=True, capture_output=True, text=True)
             
             # Verificamos que el archivo se creo correctamente
             if os.path.exists(self.output_top):
