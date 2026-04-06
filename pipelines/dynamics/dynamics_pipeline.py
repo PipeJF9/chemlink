@@ -1,6 +1,6 @@
 import os
 from .utils import calculate_nsteps, update_md_nsteps, check_gmx_installation
-from .steps import TopologyStep, SolvationStep, IonsStep
+from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -47,7 +47,12 @@ class DynamicsPipeline:
             ions = IonsStep(self.config, self.gmx_bin)
             ions.run()
 
-            # x. Ejecutar siguientes pasos: EnergyMin, Equilibration, Production (próximamente)
+            # 4. Ejecutar Paso 4: Minimización de Energía
+            print("\n[Paso 4/6] Minimizando energía...")
+            em = EnergyMinStep(self.config, self.gmx_bin)
+            em.run()
+
+            # x. Ejecutar siguientes pasos: Equilibration, Production (próximamente)
 
             print("\n[✓] ¡Proceso de Dinámica finalizado con éxito!")
         except Exception as e:
