@@ -16,7 +16,7 @@ class IonsStep:
         self.output_gro = os.path.join(self.config["work_dir"], "solvated_ions.gro")
 
     def _create_ions_mdp(self):
-        """Crea el archivo mdp mínimo para que genion funcione (Líneas 610-613 del .sh)"""
+        """Crea el archivo mdp mínimo para que genion funcione"""
         mdp_content = (
             "; ions.mdp - Generado por ChemLink\n"
             "continuation = no\n"
