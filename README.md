@@ -93,3 +93,151 @@ graph TD
     D --> F["OpenBabel / RDKit"]
     B --> G["Capa de Infraestructura (HPC/System)"]
     G --> H["Gestión de Procesos / SLURM"]
+```
+
+---
+
+## 8. Instalación y Uso
+
+### 8.1 Ejecución del CLI
+
+Desde la carpeta raíz del proyecto:
+
+```bash
+python cli/main.py --help
+```
+
+También puedes usar:
+
+```bash
+python -m chemlink.cli.main --help
+```
+
+### 8.2 Preparar estructura mínima para pruebas
+
+```bash
+mkdir -p data/input/receptors
+mkdir -p data/input/ligands
+mkdir -p data/output
+```
+
+- `data/input/receptors`: archivos receptor `.pdb`
+- `data/input/ligands`: archivos ligando (`.sdf`, `.mol2`, `.pdb`, `.mol` o `.pdbqt`)
+- `data/output`: salida general del pipeline
+
+### 8.3 Comandos disponibles
+
+1. `receptor-preparation`
+
+```bash
+python cli/main.py receptor-preparation \
+    data/input/receptors \
+    data/output \
+    --mgltools-path /opt/mgltools \
+    --workers 4
+```
+
+2. `ligand-preparation`
+
+```bash
+python cli/main.py ligand-preparation \
+    data/input/ligands \
+    data/output \
+    --workers 4
+```
+
+3. `active-site` (modo automático con fpocket)
+
+```bash
+python cli/main.py active-site \
+    data/output/prepared_receptors_pdbqt \
+    data/output/prepared_ligands_pdbqt \
+    data/output \
+    --mgltools-path /opt/mgltools \
+    --fpocket-path /usr/bin/fpocket \
+    --workers 4
+```
+
+4. `active-site` (modo manual)
+
+```bash
+python cli/main.py active-site \
+    data/output/prepared_receptors_pdbqt \
+    data/output/prepared_ligands_pdbqt \
+    data/output \
+    --mgltools-path /opt/mgltools \
+    --manual-center 20 -16 -22 \
+    --manual-npts 60 60 60 \
+    --workers 4
+```
+
+5. `docking-execution`
+
+```bash
+python cli/main.py docking-execution \
+    data/output/prepared_receptors_pdbqt \
+    data/output/prepared_ligands_pdbqt \
+    data/output \
+    --autogrid-executable autogrid4 \
+    --autodock-gpu-executable ./funciones/Aplicaciones/adgpu-v1.6_linux_x64_cuda12_128wi \
+    --workers 2
+```
+
+6. `docking-analysis`
+
+```bash
+python cli/main.py docking-analysis data/output
+```
+
+7. `docking-pipeline` (preparación completa: receptor + ligando + active-site)
+
+```bash
+python cli/main.py docking-pipeline \
+    data/input/receptors \
+    data/input/ligands \
+    data/output \
+    --mgltools-path /opt/mgltools \
+    --fpocket-path /usr/bin/fpocket \
+    --receptor-workers 4 \
+    --ligand-workers 4 \
+    --active-site-workers 4
+```
+
+### 8.4 Flujo recomendado para probar end-to-end
+
+```bash
+# 1) Preparación de receptores
+python cli/main.py receptor-preparation data/input/receptors data/output --mgltools-path /opt/mgltools --workers 4
+
+# 2) Preparación de ligandos
+python cli/main.py ligand-preparation data/input/ligands data/output --workers 4
+
+# 3) Detección de sitio activo y generación de GPF
+python cli/main.py active-site data/output/prepared_receptors_pdbqt data/output/prepared_ligands_pdbqt data/output --mgltools-path /opt/mgltools --fpocket-path /usr/bin/fpocket --workers 4
+
+# 4) Ejecución de docking
+python cli/main.py docking-execution data/output/prepared_receptors_pdbqt data/output/prepared_ligands_pdbqt data/output --autogrid-executable autogrid4 --autodock-gpu-executable ./funciones/Aplicaciones/adgpu-v1.6_linux_x64_cuda12_128wi --workers 2
+
+# 5) Análisis de resultados
+python cli/main.py docking-analysis data/output
+```
+
+### 8.5 Archivos de salida esperados
+
+- `data/output/prepared_receptors_pdbqt/`: receptores preparados + `.gpf` y mapas
+- `data/output/prepared_ligands_pdbqt/`: ligandos preparados
+- `data/output/ResultadosDocking/`: resultados por proteína (`dlg`, `xml`, `affinity.dat`)
+- `data/output/AnalisisDocking/`: `resumen_analisis.txt`, `resumen_analisis.csv`, `resumen_analisis.md`
+- `data/output/docking_molecular.log`: log general de ejecución
+
+### 8.6 Ayuda rápida
+
+```bash
+python cli/main.py --help
+python cli/main.py receptor-preparation --help
+python cli/main.py ligand-preparation --help
+python cli/main.py active-site --help
+python cli/main.py docking-execution --help
+python cli/main.py docking-analysis --help
+python cli/main.py docking-pipeline --help
+```

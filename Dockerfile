@@ -4,7 +4,9 @@ FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
 # Variables de entorno
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/usr/local/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,display
 
 # Actualizar sistema e instalar dependencias básicas
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -87,6 +89,29 @@ RUN wget -q https://ccsb.scripps.edu/download/532/ -O /tmp/mgltools.tar.gz \
     && rm /tmp/mgltools.tar.gz
 
 
+# AutoDock 4 / AutoGrid 4
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    autoconf automake libtool csh build-essential git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/ccsb-scripps/AutoGrid.git /tmp/autogrid \
+    && cd /tmp/autogrid \
+    && autoreconf -i \
+    && ./configure --prefix=/usr/local \
+    && make -j"$(nproc)" \
+    && make install \
+    && if [ -f /usr/local/bin/autogrid ]; then mv /usr/local/bin/autogrid /usr/local/bin/autogrid4; fi \
+    && rm -rf /tmp/autogrid
+
+RUN git clone https://github.com/ccsb-scripps/AutoDock4.git /tmp/autodock4 \
+    && cd /tmp/autodock4 \
+    && autoreconf -i \
+    && ./configure --prefix=/usr/local \
+    && make -j"$(nproc)" \
+    && make install \
+    && rm -rf /tmp/autodock4
+
+
 # AutoDock-GPU (CUDA 12, 128 work items)
 RUN git clone https://github.com/ccsb-scripps/AutoDock-GPU.git /tmp/autodock-gpu \
     && cd /tmp/autodock-gpu \
@@ -111,7 +136,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # GROMACS 2024.4 con soporte GPU CUDA y MPI
-RUN wget -q https://ftp.gromacs.org/gromacs/gromacs-2024.4.tar.gz -O /tmp/gromacs.tar.gz \
+RUN wget -q https://ftp.gromacs.org/pub/gromacs/gromacs-2024.4.tar.gz -O /tmp/gromacs.tar.gz \
     && cd /tmp && tar xzf gromacs.tar.gz \
     && cd gromacs-2024.4 && mkdir build && cd build \
     && cmake .. -DGMX_BUILD_OWN_FFTW=ON -DREGRESSIONTEST_DOWNLOAD=ON \

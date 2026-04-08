@@ -7,11 +7,11 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from openbabel import openbabel as ob
 
-from chemlink.storage.file_manager import find_extension, find_compound_name, create_out_file
-from chemlink.adapters.autodocktools.autodocktools_adapter import prepare_ligand_mgltools
-from chemlink.utils.logger import get_logger
+from ..storage.file_manager import find_extension, find_compound_name, create_out_file
+from ..adapters.autodocktools.autodocktools_adapter import prepare_ligand_mgltools
+from .logger import setup_logger
 
-logger = get_logger(__name__)
+logger = setup_logger(__name__)
 
 
 class MoleculeProcessor:

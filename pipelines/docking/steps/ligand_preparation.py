@@ -1,5 +1,6 @@
 """Ligand preparation pipeline step for molecular docking."""
 
+import logging
 import os
 import traceback
 from datetime import datetime
@@ -8,14 +9,15 @@ from functools import partial
 from typing import Optional, List, Dict, Tuple
 from tqdm import tqdm
 
-from chemlink.storage.file_manager import (
+
+from ....storage.file_manager import (
     create_folder, list_files_in_directory, 
     verify_only_file, split_multi_molecule_sdf
 )
-from chemlink.utils.molecule_processor import process_ligand
-from chemlink.utils.logger import setup_logger
+from ....utils.molecule_processor import process_ligand
+from ....utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger(__name__, level=logging.INFO)
 
 
 class LigandPreparation:
@@ -237,7 +239,7 @@ class LigandPreparation:
         files = self._collect_ligand_files()
         
         if not files:
-            print(f'No ligand files found in {self.input_path}')
+            logger.warning(f'No ligand files found in {self.input_path}')
             return {'successful': 0, 'failed': 0, 'warnings': 0}
 
         shard_cfg = self._get_shard_config()
@@ -246,13 +248,13 @@ class LigandPreparation:
             shard_index, shard_count = shard_cfg
             files = self._select_shard_files(files, shard_index, shard_count)
 
-            print(
+            logger.info(
                 f"SLURM sharding enabled: shard {shard_index + 1}/{shard_count} "
                 f"processing {len(files)}/{total_files} ligand(s)"
             )
 
             if not files:
-                print("No ligands assigned to this shard.")
+                logger.warning("No ligands assigned to this shard.")
                 return {'successful': 0, 'failed': 0, 'warnings': 0}
         
         # Determine worker count
@@ -267,7 +269,9 @@ class LigandPreparation:
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        print(f"\nPreparing {len(files)} ligand(s) using {n_workers} worker(s)...\n")
+        logger.info(
+            f"Preparing {len(files)} ligand(s) using {n_workers} worker(s)..."
+        )
         
         # Process ligands
         if n_workers == 1:
@@ -311,46 +315,19 @@ class LigandPreparation:
                 all_warnings.extend([(ligand_name, w) for w in warnings])
         
         # Print summary
-        print(f"\n✓ Successfully prepared: {len(successful)}/{len(files)} ligands")
+        logger.info(f"Successfully prepared: {len(successful)}/{len(files)} ligands")
         
         # Write reports
         if all_warnings:
             warn_log = self._write_warning_report(all_warnings, timestamp)
-            print(f"Warnings: {len(all_warnings)} - See: {warn_log}")
+            logger.warning(f"Warnings: {len(all_warnings)} - See: {warn_log}")
         
         if failed:
             error_log = self._write_error_report(failed, timestamp)
-            print(f"Failed: {len(failed)} - See: {error_log}")
-        
-        print()
+            logger.error(f"Failed: {len(failed)} - See: {error_log}")
         
         return {
             'successful': len(successful),
             'failed': len(failed),
             'warnings': len(all_warnings)
         }
-
-
-def main():
-    """Command-line entry point for ligand preparation."""
-    import sys
-    
-    if len(sys.argv) < 3:
-        print("Usage: python ligand_preparation.py <input_dir> <output_dir> [n_workers]")
-        sys.exit(1)
-    
-    input_dir = sys.argv[1]
-    output_dir = sys.argv[2]
-    n_workers = int(sys.argv[3]) if len(sys.argv) > 3 else None
-    
-    prep = LigandPreparation(input_dir, output_dir)
-    stats = prep.prepare(n_workers=n_workers)
-    
-    print(f"\nFinal Statistics:")
-    print(f"  Successful: {stats['successful']}")
-    print(f"  Failed: {stats['failed']}")
-    print(f"  Warnings: {stats['warnings']}")
-
-
-if __name__ == '__main__':
-    main()
