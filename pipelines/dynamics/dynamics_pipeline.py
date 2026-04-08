@@ -1,5 +1,5 @@
 import os
-from .utils import calculate_nsteps, update_md_nsteps, check_gmx_installation
+from .utils import check_gmx_installation
 from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep
 
 class DynamicsPipeline:
@@ -12,24 +12,12 @@ class DynamicsPipeline:
                 - threads (int)
         """
         self.config = config
-
-        self.md_mdp_path = "data/input/dynamics/md.mdp"
         self.gmx_bin = check_gmx_installation()
-
-    def _prepare_time(self):
-        print(f"\n[ChemLink] Configurando simulación para {self.config['ns_time']} ns...")
-        
-        steps = calculate_nsteps(self.config['ns_time'])
-        update_md_nsteps(self.md_mdp_path, steps)
-        
-        return steps
 
     def execute(self):
         print("\n" + "="*50)
         print("   INICIANDO ORQUESTADOR DE DINÁMICA: CHEMLINK   ")
         print("="*50)
-
-        self._prepare_time()
 
         try:
             # 1. Ejecutar Paso 1: Topología
