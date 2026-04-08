@@ -6,14 +6,14 @@ class EnergyMinStep:
         self.config = config
         self.gmx_bin = gmx_bin
         
-        # Rutas de archivos (usando nombres estándar)
+        # Entradas
         self.input_gro = os.path.join(self.config["work_dir"], "solvated_ions.gro")
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         
         self.em_mdp = os.path.join(self.config["work_dir"], "em.mdp")
         self.em_tpr = os.path.join(self.config["work_dir"], "em.tpr")
         self.output_gro = os.path.join(self.config["work_dir"], "em.gro")
-        #em_log = os.path.join(self.config["work_dir"], "em.log") lo quitamos porque gmx mdrun ya lo genera automáticamente
+        # em_log = os.path.join(self.config["work_dir"], "em.log") lo quitamos porque gmx mdrun ya lo genera automáticamente
 
     def _create_em_mdp(self):
         """Crea el archivo mdp basado en tu lógica de Dinamica.sh"""
