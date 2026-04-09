@@ -1,9 +1,8 @@
 # Informe Tecnico del Proyecto ChemLink
 
-Versión: 1.1  
 Fecha: 2026-04-08
 
-## Resumen
+## Introducción
 
 ChemLink es una plataforma CLI orientada a química computacional y ejecución distribuida en entornos HPC. Su propósito es automatizar pipelines de docking molecular para disminuir trabajo manual, mejorar reproducibilidad y aumentar el aprovechamiento de recursos CPU/GPU. El proyecto se desarrolla como trabajo de grado en Ingeniería de Sistemas con enfoque en arquitectura de software, HPC y sistemas distribuidos [I1][I2][I3].
 
@@ -188,25 +187,25 @@ La solución se documenta además con los siguientes diagramas, reutilizados des
 
 #### Diagrama de contexto
 
-![Diagrama de contexto del sistema](informes/images/Codediagram.drawio.png)
+![Diagrama de contexto del sistema](images/Codediagram.drawio.png)
 
 Este diagrama resume el entorno general de ChemLink, los actores del sistema y su interacción con el ecosistema HPC y las herramientas científicas externas.
 
 #### Diagrama de contenedores
 
-![Diagrama de contenedores de ChemLink](informes/images/containermodel.drawio.png)
+![Diagrama de contenedores de ChemLink](images/containermodel.drawio.png)
 
 Este diagrama muestra la distribución lógica de los principales contenedores funcionales del sistema, incluyendo la CLI, el pipeline y los módulos de soporte.
 
 #### Diagrama C1
 
-![Diagrama C1 de ChemLink](informes/images/c1model.drawio.png)
+![Diagrama C1 de ChemLink](images/c1model.drawio.png)
 
 Este diagrama presenta la vista de contexto ampliada y ayuda a entender cómo se relaciona el usuario con la orquestación del pipeline y la infraestructura de ejecución.
 
 #### Diagrama de componentes
 
-![Diagrama de componentes de ChemLink](informes/images/Componentmodel.drawio.png)
+![Diagrama de componentes de ChemLink](images/Componentmodel.drawio.png)
 
 Este diagrama detalla la descomposición interna del sistema en componentes reutilizables, alineada con la arquitectura modular del código fuente.
 
