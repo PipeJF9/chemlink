@@ -35,6 +35,10 @@ class ActiveSiteDetection:
 	"""
 
 	DEFAULT_FPOCKET_PATH = "/usr/bin/fpocket"
+	FPOCKET_CANDIDATES = (
+		"/usr/local/bin/fpocket",
+		"/usr/bin/fpocket",
+	)
 	DEFAULT_MGLTOOLS_PATH = "/opt/mgltools"
 
 	def __init__(
@@ -68,7 +72,7 @@ class ActiveSiteDetection:
 		self.ligand_path = ligand_path
 		self.output_path = output_path
 
-		self.fpocket_path = fpocket_path or self.DEFAULT_FPOCKET_PATH
+		self.fpocket_path = self._resolve_fpocket_path(fpocket_path)
 		self.mgltools_path = mgltools_path or self.DEFAULT_MGLTOOLS_PATH
 
 		self.box_padding = box_padding
@@ -104,11 +108,35 @@ class ActiveSiteDetection:
 		"""Return True when manual grid center and npts are configured."""
 		return self.manual_center is not None and self.manual_npts is not None
 
+	@classmethod
+	def _resolve_fpocket_path(cls, fpocket_path: Optional[str]) -> str:
+		"""Resolve fpocket executable from explicit path, PATH, or known locations."""
+		if fpocket_path:
+			if os.path.isabs(fpocket_path):
+				return fpocket_path
+			resolved = shutil.which(fpocket_path)
+			if resolved:
+				return resolved
+			return fpocket_path
+
+		resolved = shutil.which("fpocket")
+		if resolved:
+			return resolved
+
+		for candidate in cls.FPOCKET_CANDIDATES:
+			if os.path.isfile(candidate):
+				return candidate
+
+		return cls.DEFAULT_FPOCKET_PATH
+
 	def _validate_dependencies(self) -> None:
 		"""Validate required external binaries and scripts."""
 		if not self.is_manual_mode:
 			if not os.path.isfile(self.fpocket_path):
-				raise FileNotFoundError(f"fpocket not found: {self.fpocket_path}")
+				raise FileNotFoundError(
+					f"fpocket not found: {self.fpocket_path}. "
+					"Pass --fpocket-path or ensure fpocket is available in PATH."
+				)
 			if not os.access(self.fpocket_path, os.X_OK):
 				raise RuntimeError(f"fpocket is not executable: {self.fpocket_path}")
 
