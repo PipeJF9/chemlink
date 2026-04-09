@@ -1,1058 +1,327 @@
-# ChemLink: Plataforma de Orquestación para Docking Molecular en Entornos HPC
+# Informe Tecnico del Proyecto ChemLink
 
-## Informe Técnico I - Propuesta de Proyecto de Grado
+Versión: 1.1  
+Fecha: 2026-04-08
 
----
+## Resumen
 
-## 👥 Autores
+ChemLink es una plataforma CLI orientada a química computacional y ejecución distribuida en entornos HPC. Su propósito es automatizar pipelines de docking molecular para disminuir trabajo manual, mejorar reproducibilidad y aumentar el aprovechamiento de recursos CPU/GPU. El proyecto se desarrolla como trabajo de grado en Ingeniería de Sistemas con enfoque en arquitectura de software, HPC y sistemas distribuidos [I1][I2][I3].
 
-- **Juan Felipe Santos Rodríguez**
-- **Samuel Matiz García**
-- **Camilo Andrés Navarro Navarro**
+## 1. Contexto del proyecto
 
-**Universidad del Norte**  
-Barranquilla, Colombia  
-2026
+La investigación en química computacional depende de la ejecución repetible de procesos intensivos en cómputo. En el contexto del laboratorio, el docking molecular requiere preparar estructuras, definir regiones de búsqueda, ejecutar simulaciones y consolidar resultados. Este flujo, cuando se realiza manualmente, consume tiempo operativo y aumenta la probabilidad de errores.
 
-**Docente:** Augusto Salazar  
-**Co-asesor:** Daniel Romero
+ChemLink surge como una solución de ingeniería para estandarizar y automatizar ese flujo mediante una interfaz de línea de comandos modular. El repositorio ya incorpora etapas de preparación de receptores, preparación de ligandos, detección de sitio activo, ejecución de docking y análisis posterior, junto con soporte de paralelismo local y base para ejecución en cluster con SLURM [I4][I5][I6].
 
----
+## 2. Situación actual
 
-## 📋 Información del Documento
+Estado sintético del sistema:
 
-- **Título**: ChemLink: Plataforma de Orquestación para Docking Molecular en Entornos HPC
-- **Tipo**: Informe Técnico Número I - Propuesta del Proyecto
-- **Modalidad**: Trabajo de Final de Grado
-- **Programa Académico**: Ingeniería de Sistemas  
-- **Institución**: Universidad del Norte
-- **Ubicación**: Barranquilla, Colombia
-- **Período**: 2026-10
-- **Fecha de Presentación**: Marzo 2026
-- **Laboratorio**: Chemlab - Facultad de Ciencias
+- Existe una CLI funcional con una única capa de uso actual enfocada en docking.
+- Comandos recomendados agrupados: `chemlink docking prepare`, `chemlink docking full`, `chemlink docking run`, `chemlink docking analyze`.
+- Comandos legacy para compatibilidad: `receptor-preparation`, `ligand-preparation`, `active-site`, `docking-execution`, `docking-analysis`, `docking-pipeline` [I4][I5].
+- El pipeline de docking implementa flujo de preparación y flujo completo (incluye ejecución y análisis) [I4].
+- Hay soporte de defaults para rutas de entrada/salida y workers, lo que reduce la verbosidad de ejecución.
+- Se integran herramientas externas clave (fpocket, MGLTools/AutoDockTools, AutoGrid4 y AutoDock-GPU) con adaptadores y etapas dedicadas [I2][I3].
+- Hay capacidades de sharding para arreglos SLURM vía variables de entorno, útiles para despliegues multi-nodo [I6].
+- Se habilitó comando local `chemlink` mediante launcher, con rutas por defecto y ayudas de comando documentadas [I5][I7].
 
----
+## 3. Necesidad u oportunidad identificada que motiva el desarrollo de la solución
 
-## 📑 Tabla de Contenidos
+La necesidad principal es transformar un proceso de docking históricamente manual, fragmentado y sensible a error en un proceso repetible, trazable y escalable.
 
-1. [Introducción](#-introducción)
-2. [Planteamiento del Problema](#-planteamiento-del-problema)
-3. [Justificación](#-justificación)
-4. [Restricciones y Supuestos de Diseño](#-restricciones-y-supuestos-de-diseño)
-5. [Objetivos](#-objetivos)
-6. [Alcance](#-alcance)
-7. [Estado del Arte y Soluciones Relacionadas](#-estado-del-arte-y-soluciones-relacionadas)
-8. [Diagramas de Arquitectura (Modelo C4)](#-diagramas-de-arquitectura-modelo-c4)
-9. [Requerimientos Preliminares](#-requerimientos-preliminares)
-10. [Criterios de Aceptación Inicial](#-criterios-de-aceptación-inicial)
-11. [Plan de Trabajo](#-plan-de-trabajo)
-12. [Riesgos del Proyecto](#-riesgos-del-proyecto)
-13. [Referencias Bibliográficas](#-referencias-bibliográficas)
-14. [Anexos](#-anexos)
+Oportunidades concretas:
 
----
+- Reducir tiempo operativo por experimento al estandarizar la ejecución por línea de comandos.
+- Elevar reproducibilidad al centralizar parámetros, estructura de carpetas y reportes.
+- Mejorar el uso de infraestructura HPC existente con particionamiento de carga y ejecución distribuida.
+- Facilitar transición de pruebas locales a ejecución en cluster y contenedores sin rediseñar la lógica científica.
 
-## 📖 Introducción
+Este enfoque se alinea con la necesidad de HTVS (high-throughput virtual screening), donde escalabilidad y consistencia de ejecución son determinantes [1][2][6].
 
-En las últimas décadas, la bioinformática y la química computacional se han consolidado como pilares fundamentales en el descubrimiento racional de fármacos y en la comprensión de mecanismos moleculares complejos. Estas disciplinas permiten modelar, simular y analizar interacciones biológicas a nivel atómico mediante herramientas computacionales avanzadas, reduciendo significativamente los costos y tiempos asociados a la experimentación exclusivamente experimental.
+## 4. Planteamiento del problema
 
-### Técnicas Relevantes en Química Computacional
+### 4.1 Definición y delimitación del problema central
 
-Entre las técnicas más relevantes se encuentran:
+El problema central es la falta de una capa unificada de orquestación para docking molecular en un entorno HPC heterogéneo, lo que provoca ejecuciones manuales largas, configuraciones inconsistentes y dificultades de auditoría experimental.
 
-- **Docking Molecular**: Permite predecir la orientación y afinidad de unión entre una proteína y un ligando.
-- **Dinámica Molecular**: Posibilita evaluar la estabilidad estructural y el comportamiento temporal de complejos biomoleculares.
+Relevancia:
 
-La ejecución eficiente de estas técnicas requiere altos recursos computacionales, lo que ha impulsado el uso de entornos de **Computación de Alto Rendimiento (HPC)**, capaces de distribuir cargas de trabajo y aprovechar aceleración mediante GPUs.
+- Impacta productividad del laboratorio.
+- Aumenta riesgo de errores de configuración.
+- Dificulta comparación de resultados entre corridas.
+- Limita la escalabilidad a escenarios multi-nodo.
 
-### Tendencias Actuales en Investigación Computacional
+### 4.2 Descripción del problema
 
-En este contexto, las tendencias actuales en investigación computacional apuntan hacia:
+En el flujo previo, cada etapa del docking se ejecuta como paso aislado y con parametrización manual. Esto produce:
 
-1. **Automatización de Pipelines Científicos**: Integración fluida de múltiples herramientas en flujos de trabajo reproducibles.
-2. **Integración con Gestores de Colas**: Uso de sistemas como SLURM para optimizar la asignación de recursos computacionales.
-3. **Arquitecturas Modulares**: Diseño de sistemas desacoplados que faciliten el mantenimiento y la extensibilidad.
-4. **Almacenamiento Centralizado**: Implementación de sistemas que permitan manejar grandes volúmenes de datos de manera organizada.
-5. **Reproducibilidad Científica**: Criterio esencial dentro de los estudios computacionales modernos.
+- Acoplamiento operativo al conocimiento tácito del operador.
+- Alto riesgo en rutas, formatos y binarios externos.
+- Baja estandarización de logs, reportes y artefactos de salida.
+- Dificultad para repetir experimentos con igualdad de condiciones.
 
-### Problemática Actual
+### 4.3 Restricciones y supuestos de diseño
 
-No obstante, en muchos entornos académicos y de investigación, la ejecución de experimentos de docking molecular aún depende de procesos manuales y de la integración *ad hoc* de diversas herramientas. Esta situación genera:
+Restricciones:
 
-- Dificultades en la gestión de experimentos
-- Limitaciones en la escalabilidad de los estudios
-- Desafíos para mantener una trazabilidad clara de los resultados obtenidos
+- Dependencia de software científico de terceros (fpocket, MGLTools, AutoGrid4, AutoDock-GPU).
+- Variabilidad de rutas y binarios entre host, contenedor y cluster.
+- Disponibilidad desigual de CPU/GPU por nodo.
+- Limitaciones operativas de laboratorio para pruebas prolongadas.
 
----
+Supuestos:
 
-## 🔴 Planteamiento del Problema
+- Linux como plataforma principal.
+- Estructura de datos esperada en `data/input` y `data/output`.
+- Existencia de entorno Python con dependencias científicas (por ejemplo RDKit) [I3].
+- Uso de almacenamiento compartido (NAS) para escenarios distribuidos.
 
-En los entornos académicos donde se desarrollan estudios de docking molecular, la ejecución de experimentos computacionales suele depender de una integración manual y fragmentada de múltiples herramientas. Aunque existen soluciones robustas para el cálculo molecular, como **AutoDock-GPU** [1], y gestores de colas ampliamente adoptados como **SLURM** [2], su articulación operativa dentro de un flujo experimental coherente no se encuentra formalizada ni automatizada.
+### 4.4 Alcance (lo que incluye y lo que no)
 
-### Naturaleza del Problema
+Incluye:
 
-**El problema no radica en la inexistencia de herramientas científicas eficientes**, sino en **la ausencia de un sistema integrador** que permita orquestar, monitorear y estructurar su ejecución bajo principios de automatización, control y reproducibilidad académica.
+- CLI para ejecutar flujo de docking por etapas y flujo completo.
+- Integración con herramientas de docking y post-análisis.
+- Soporte de paralelismo local y particionamiento para SLURM.
+- Reportes y logs de corrida.
 
-### Situación Actual
+No incluye:
 
-Actualmente, los investigadores deben:
+- Desarrollo de nuevos algoritmos de docking.
+- GUI web completa de producción.
+- Administración física de infraestructura HPC.
 
-- Preparar manualmente *scripts* de envío al clúster
-- Configurar parámetros de ejecución
-- Administrar rutas de almacenamiento distribuidas
-- Monitorear el estado de los trabajos mediante comandos de bajo nivel
+## 5. Objetivos
 
-La integración entre herramientas de cálculo, gestión de recursos HPC y almacenamiento compartido **no responde a una arquitectura estructurada**, sino a prácticas individuales que varían entre usuarios.
+### 5.1 Objetivo principal
 
-### Efectos Negativos de la Fragmentación Técnica
+Diseñar e implementar una plataforma CLI modular para automatizar y orquestar pipelines de docking molecular en entornos locales y HPC, garantizando reproducibilidad, trazabilidad y eficiencia computacional.
 
-Esta fragmentación técnica genera múltiples efectos negativos:
+### 5.2 Objetivos específicos
 
-#### ⏱️ Retrasos Operativos
-- Retrasos en los ciclos de experimentación debido a errores de configuración y reenvío de tareas
+1. Definir una arquitectura modular por capas que desacople orquestación, procesamiento molecular, almacenamiento e integraciones externas.
+2. Implementar flujo completo de docking con etapas independientes y componibles.
+3. Integrar soporte de ejecución distribuida por sharding y compatibilidad con SLURM.
+4. Estandarizar configuración y defaults para reducir verbosidad y error humano.
+5. Consolidar análisis de resultados en reportes estructurados.
+6. Establecer plan de pruebas para validar funcionalidad, integración y usabilidad operativa.
 
-#### 🔄 Pérdida de Reproducibilidad
-- Pérdida de reproducibilidad al no existir trazabilidad formal de parámetros, versiones y resultados
+## 6. Estado del arte
 
-#### 👨‍🔬 Sobrecarga Técnica
-- Sobrecarga técnica en los investigadores, quienes deben dedicar tiempo significativo a tareas operativas en lugar de análisis científico
+### 6.1 Herramientas de docking y pre/post-proceso
 
-#### 📊 Dificultad de Escalabilidad
-- Dificultad para escalar experimentos cuando se requiere ejecutar múltiples simulaciones en paralelo dentro del clúster
+- AutoDock y AutoDock4 son referentes históricos para docking por funciones de scoring y búsqueda estocástica [1][2].
+- AutoDock-GPU acelera el flujo para escenarios de alto volumen en arquitecturas modernas [3].
+- fpocket se usa para detección geométrica de cavidades y apoyo en definición de región de docking [4].
+- Open Babel y RDKit son piezas ampliamente usadas para conversión, curado y manejo de estructuras químicas [5][6].
 
-### Consecuencias
+### 6.2 Orquestación HPC y contenedores
 
-Como consecuencia, el proceso de investigación computacional se vuelve:
+- SLURM es estándar de facto para gestión de colas en HPC académico/industrial [7].
+- Apptainer/Singularity es práctica recomendada para reproducibilidad en clusters donde Docker no siempre es viable en runtime [8].
 
-- ❌ **Menos eficiente**
-- ❌ **Más propenso a inconsistencias**
-- ❌ **Dependiente del conocimiento técnico individual**
+### 6.3 Brecha frente al contexto local
 
-Esto limita el aprovechamiento óptimo de la infraestructura HPC disponible.
+Las herramientas individuales son robustas, pero el valor diferencial del proyecto está en su integración operativa:
 
----
+- Uniformar entrada/salida y parametrización.
+- Incorporar defaults orientados a ejecución real.
+- Reducir curva de aprendizaje para usuarios del laboratorio.
 
-## ✨ Justificación
+## 7. Requerimientos
 
-El desarrollo de herramientas que faciliten la gestión de experimentos computacionales se ha vuelto fundamental para aprovechar adecuadamente las infraestructuras de computación de alto rendimiento disponibles en entornos académicos.
+### 7.1 Requerimientos funcionales
 
-### Necesidad Identificada
+RF-01. Ejecutar pipeline completo de docking desde CLI con un comando principal.  
+RF-02. Ejecutar etapas individuales de preparación, ejecución y análisis.  
+RF-03. Soportar modo de sitio activo automático y manual.  
+RF-04. Permitir configuración de workers por etapa.  
+RF-05. Detectar/aceptar rutas de binarios externos requeridos.  
+RF-06. Generar reportes de análisis en formatos estructurados.  
+RF-07. Proveer mensajes de error útiles y logs de ejecución.  
+RF-08. Soportar particionamiento por variables de entorno para arreglos SLURM.
 
-En el caso del docking molecular, la ausencia de sistemas que integren de manera estructurada:
+### 7.2 Requerimientos no funcionales
 
-- La ejecución de tareas
-- La gestión de recursos
-- El almacenamiento de resultados
+RNF-01. Reproducibilidad: misma entrada + mismos parámetros debe producir resultados comparables.  
+RNF-02. Escalabilidad: soporte de ejecución local y distribuida.  
+RNF-03. Usabilidad operativa: CLI clara, defaults sensatos y ayuda por comando.  
+RNF-04. Mantenibilidad: estructura modular y separación de responsabilidades.  
+RNF-05. Portabilidad: ejecución en host y contenedor (Docker/Apptainer).  
+RNF-06. Observabilidad: logs y reportes por etapa para diagnóstico.
 
-...dificulta la realización de estudios eficientes y reproducibles.
+## 8. Diseño y arquitectura
 
-### Solución Propuesta
+### 8.1 Evaluación de alternativas
 
-Ante esta situación, resulta pertinente diseñar una **plataforma que permita automatizar y estructurar los pipelines de docking molecular en entornos HPC**.
+Alternativa A: scripts monolíticos por etapa sin orquestador central.  
+- Ventaja: implementación rápida inicial.  
+- Desventaja: acoplamiento alto, baja mantenibilidad, repetición de lógica.
 
-### Contribuciones Esperadas
+Alternativa B: CLI modular por comandos con pipeline orquestado (opción adoptada).  
+- Ventaja: extensibilidad, claridad de responsabilidades, mejor trazabilidad.  
+- Desventaja: mayor esfuerzo inicial de estructura.
 
-Una solución de este tipo contribuiría a:
+Alternativa C: API web como puerta principal desde el inicio.  
+- Ventaja: accesibilidad para usuarios no técnicos.  
+- Desventaja: complejiza seguridad, operación y debugging en etapa temprana.
 
-1. **Optimizar el uso del clúster de cómputo**: Aprovechamiento eficiente de recursos GPU/CPU
-2. **Reducir la carga operativa sobre los investigadores**: Automatización de tareas repetitivas
-3. **Mejorar la trazabilidad de los experimentos**: Gestión organizada de parámetros y resultados
+La decisión es adoptar B como base y dejar C como evolución posterior para una capa de autoservicio.
 
-### Impacto
+### 8.2 Arquitectura
 
-De esta manera, el proyecto busca aportar una herramienta que facilite la ejecución de estudios computacionales:
+La arquitectura implementada sigue un enfoque por capas y componentes:
 
-- ✅ Más eficientes
-- ✅ Más escalables
-- ✅ Más reproducibles
+- CLI: parsing, defaults y UX de comandos.
+- Pipeline: coordinación de etapas y validación de precondiciones.
+- Steps: lógica operativa por etapa del docking.
+- Utils/Storage: utilidades comunes y operaciones de archivos.
+- Adapters: encapsulación de interacción con herramientas externas.
+- HPC: scripts de soporte para ejecución por scheduler.
 
-...dentro del ámbito académico.
+Esta descomposición minimiza acoplamiento y facilita pruebas unitarias por componente [I2][I4].
 
----
+### 8.3 Diagramas de arquitectura
 
-## 🔧 Restricciones y Supuestos de Diseño
+La solución se documenta además con los siguientes diagramas, reutilizados desde el primer informe y almacenados en [`informes/images`](informes/images).
 
-El desarrollo del sistema considera algunas restricciones técnicas y operativas que pueden influir en su implementación:
+#### Diagrama de contexto
 
-### Restricción 1: Dependencia de Herramientas Externas
+![Diagrama de contexto del sistema](informes/images/Codediagram.drawio.png)
 
-- El proyecto depende de herramientas externas especializadas como **AutoDock-GPU**
-- Estas herramientas deben estar correctamente instaladas y configuradas en el entorno de ejecución
-- Es necesario garantizar el funcionamiento del proceso de simulación molecular
+Este diagrama resume el entorno general de ChemLink, los actores del sistema y su interacción con el ecosistema HPC y las herramientas científicas externas.
 
-### Restricción 2: Configuración de Entorno HPC
+#### Diagrama de contenedores
 
-- El sistema requiere una configuración adecuada de permisos y del entorno de ejecución dentro del clúster
-- Los usuarios deben tener acceso autorizado a:
-  - GPU
-  - Almacenamiento
-  - Colas de procesamiento (SLURM)
+![Diagrama de contenedores de ChemLink](informes/images/containermodel.drawio.png)
 
-### Restricción 3: Gestión de Recursos GPU
+Este diagrama muestra la distribución lógica de los principales contenedores funcionales del sistema, incluyendo la CLI, el pipeline y los módulos de soporte.
 
-- Posible sobrecarga de las GPU si no se gestiona correctamente la distribución de tareas
-- El diseño contempla mecanismos de control para:
-  - Evitar la saturación de recursos
-  - Asegurar un uso eficiente del hardware disponible
+#### Diagrama C1
 
-### Restricción 4: Tiempo de Pruebas
+![Diagrama C1 de ChemLink](informes/images/c1model.drawio.png)
 
-- El tiempo disponible para realizar pruebas en el entorno real será limitado
-- Parte de la validación inicial del sistema deberá realizarse en entornos de prueba o simulación
-- La ejecución completa en la infraestructura definitiva se realizará posteriormente
+Este diagrama presenta la vista de contexto ampliada y ayuda a entender cómo se relaciona el usuario con la orquestación del pipeline y la infraestructura de ejecución.
 
----
+#### Diagrama de componentes
 
-## 🎯 Objetivos
+![Diagrama de componentes de ChemLink](informes/images/Componentmodel.drawio.png)
 
-### Objetivo 1: Diseñar Arquitectura Modular
+Este diagrama detalla la descomposición interna del sistema en componentes reutilizables, alineada con la arquitectura modular del código fuente.
 
-**Diseñar** una arquitectura de software modular y desacoplada, organizada en capas (CLI, Core, Adapters y Utils), que permita:
+## 9. Implementación
 
-- Estructurar claramente las responsabilidades del sistema
-- Facilitar su mantenibilidad
-- Habilitar futuras extensiones dentro del ecosistema HPC del laboratorio
+### 9.1 Stack tecnológico
 
-### Objetivo 2: Automatizar Pipeline Completo
+- Lenguaje principal: Python 3.
+- CLI: argparse (nativo), con jerarquía de comandos y aliases.
+- Dependencias científicas: RDKit, NumPy, tqdm y utilitarios de sistema [I3].
+- Toolchain externa: fpocket, MGLTools/AutoDockTools, AutoGrid4, AutoDock-GPU.
+- Infraestructura objetivo: Linux, SLURM y almacenamiento compartido NAS.
+- Contenedores: Docker/Apptainer para empaquetado reproducible.
 
-**Automatizar** el pipeline completo de docking molecular, integrando:
+### 9.2 Componentes
 
-- Detección automática de sitios de unión
-- Generación dinámica de cajas de docking
-- Preparación y validación de archivos de entrada
-- Ejecución paralela del docking con GPU
-- Verificación estructurada de los resultados generados
+Componentes funcionales principales:
 
-### Objetivo 3: Implementar Sistema de Ejecución Híbrido
+- ReceptorPreparation
+- LigandPreparation
+- ActiveSiteDetection
+- DockingExecution
+- DockingAnalysis
+- DockingPipeline (orquestador)
+- CLI principal y comandos agrupados/legacy
 
-**Implementar** un sistema de ejecución paralela híbrido que permita:
+Componentes de soporte:
 
-- Multiprocesamiento local para desarrollo y pruebas
-- Generación automática de scripts de SLURM para ejecución en clúster
-- Gestión eficiente de recursos computacionales distribuidos
+- logger, validadores y manejo de archivos
+- scripts SLURM para escenarios distribuidos
 
-### Objetivo 4: Desarrollar Validación de Recursos
+### 9.3 Integraciones
 
-**Desarrollar** mecanismos de validación y control de recursos computacionales que:
+Integraciones críticas:
 
-- Evalúen la disponibilidad de CPU, memoria y GPU
-- Realicen evaluaciones antes y durante la ejecución
-- Prevengan sobrecargas del sistema
-- Optimicen la asignación de tareas
-- Garanticen la estabilidad operativa del clúster
+- Resolución de ejecutables de docking por PATH/rutas explícitas.
+- Conversor y preparador molecular en preproceso.
+- Generación de archivos de grid y ejecución GPU.
+- Recolección y consolidación de resultados para analítica final.
 
-### Objetivo 5: Incorporar Tolerancia a Fallos
+## 10. Plan de pruebas
 
-**Incorporar** estrategias básicas de tolerancia a fallos, incluyendo:
+### 10.1 Pruebas por componentes
 
-- Control de timeouts
-- Detección de ejecuciones incompletas o fallidas
-- Registro estructurado de errores
-- Asegurar la robustez del sistema ante eventos inesperados
+Objetivo: validar cada etapa de forma aislada.
 
-### Objetivo 6: Diseñar Módulo de Análisis
+- Preparación de receptores: entradas válidas/ inválidas, errores de binario, salida esperada.
+- Preparación de ligandos: formatos múltiples, partición de archivos multi-molécula, advertencias.
+- Detección de sitio activo: modo automático vs manual, fallback de rutas fpocket.
+- Ejecución docking: detección de mapas/gpf, comportamiento con workers, manejo de fallos.
+- Análisis: parseo de resultados, consistencia de reportes.
 
-**Diseñar e implementar** un módulo de análisis estructurado de resultados que permita:
+Criterio de aceptación:
 
-- Extraer automáticamente métricas relevantes (afinidad, RMSD)
-- Generar rankings globales de ligandos
-- Calcular estadísticas descriptivas
-- Exportar reportes reproducibles
-- Facilitar la trazabilidad científica
+- Cada componente retorna estadísticas esperadas y artefactos de salida correctos.
 
-### Objetivo 7: Evaluar Desempeño del Sistema
+### 10.2 Pruebas de integración
 
-**Evaluar** el desempeño del sistema mediante:
+Objetivo: verificar continuidad del pipeline end-to-end.
 
-- Comparación entre ejecución secuencial y distribuida
-- Medición de métricas: tiempo total de ejecución, speedup paralelo, eficiencia computacional
-- Análisis de tasa de éxito experimental
-- Validación del impacto de la solución en el entorno HPC del laboratorio
+Escenarios mínimos:
 
----
+1. Flujo completo con defaults: `chemlink docking full`.
+2. Flujo completo con parámetros manuales de caja.
+3. Flujo por etapas (`prepare`, `run`, `analyze`) con salida intermedia existente.
+4. Ejecución en contenedor con rutas de binarios no estándar.
+5. Ejecución en entorno SLURM con sharding por arreglo.
 
-## 📐 Alcance
+Métricas de observación:
 
-El proyecto consiste en diseñar e implementar una **plataforma científica basada en línea de comandos (CLI)**, modular y orientada a entornos de cómputo de alto rendimiento (HPC), que permita automatizar y optimizar la ejecución de experimentos de docking molecular y dinámica molecular dentro de un clúster distribuido.
+- Tiempo por etapa.
+- Tasa de éxito por etapa.
+- Número de errores recuperables/no recuperables.
+- Integridad de reportes finales.
 
-### Componentes Principales
+### 10.3 Pruebas de usabilidad
 
-La plataforma integrará:
+Objetivo: evaluar facilidad de adopción por usuarios del laboratorio.
 
-1. **Herramientas especializadas**: AutoDock-GPU, fpocket, AutoDockTools
-2. **Gestión eficiente de recursos computacionales**: CPU y GPU
-3. **Mecanismos de paralelización**: Para mejorar el rendimiento en simulaciones
-4. **Sistema de almacenamiento**: Integración con NAS del laboratorio
+Criterios:
 
-### Funcionalidades
+- Tiempo de primera ejecución exitosa por usuario nuevo.
+- Cantidad de flags requeridos en escenario común.
+- Comprensión de mensajes de ayuda y errores.
+- Satisfacción operativa (encuesta corta Likert 1-5).
 
-Asimismo, el sistema permitirá:
+Propuesta de protocolo:
 
-- ✅ Organización y trazabilidad de los experimentos realizados
-- ✅ Validación básica de resultados
-- ✅ Generación automática de reportes reproducibles
+- Grupo piloto de usuarios del laboratorio.
+- Tareas estandarizadas (ejecutar full, revisar reporte, repetir corrida).
+- Registro de bloqueos y mejoras sugeridas para backlog CLI.
 
-### Objetivos del Alcance
+## 11. Conclusiones técnicas
 
-Con esto se busca:
+El proyecto muestra una base madura para operación real en laboratorio: la CLI ya permite uso menos verboso con defaults, existe pipeline completo y se dispone de base HPC para escalar. La principal recomendación de corto plazo es consolidar la documentación operativa (comandos + despliegue en contenedor/cluster), cerrar brechas menores de robustez en integraciones externas y formalizar la batería de pruebas para medir impacto en productividad y reproducibilidad.
 
-- 🎯 Mejorar la eficiencia computacional
-- 🎯 Facilitar la gestión de experimentos científicos
-- 🎯 Proporcionar una base escalable para el desarrollo del ecosistema Chemlab
+## 12. Referencias
 
----
+### Referencias externas
 
-## 📚 Estado del Arte y Soluciones Relacionadas
+[1] G. M. Morris et al., AutoDock4 and AutoDockTools4: Automated docking with selective receptor flexibility, Journal of Computational Chemistry, 2009.  
+[2] R. Huey et al., A semiempirical free energy force field with charge-based desolvation, Journal of Computational Chemistry, 2007.  
+[3] S. Santos-Martins et al., Accelerating AutoDock4 with GPUs and gradient-based local search, Journal of Chemical Theory and Computation, 2021.  
+[4] V. Le Guilloux, P. Schmidtke, P. Tuffery, Fpocket: An open source platform for ligand pocket detection, BMC Bioinformatics, 2009.  
+[5] N. M. O'Boyle et al., Open Babel: An open chemical toolbox, Journal of Cheminformatics, 2011.  
+[6] G. Landrum et al., RDKit: Open-source cheminformatics; documentation and project resources, https://www.rdkit.org/  
+[7] SchedMD, Slurm Workload Manager Documentation, https://slurm.schedmd.com/documentation.html  
+[8] Apptainer Project, Apptainer User Guide, https://apptainer.org/docs/
 
-### 1. Herramientas de Docking Molecular
+### Referencias internas del proyecto
 
-#### AutoDock / AutoDock-GPU
-
-En el ámbito del docking molecular, **AutoDock** [3] implementa:
-
-- Algoritmos basados en búsquedas estocásticas
-- Funciones de puntuación energéticas para estimar afinidad proteína-ligando
-
-Su versión acelerada, **AutoDock-GPU** [1]:
-
-- Optimiza el cálculo mediante paralelización masiva en GPU
-- Reduce significativamente los tiempos de ejecución en entornos de alto rendimiento
-
-**Limitaciones**:
-- Orientadas principalmente al cálculo molecular en sí mismo
-- No incluyen mecanismos nativos de orquestación distribuida
-- Sin trazabilidad estructurada de experimentos
-- Sin integración directa con sistemas de almacenamiento centralizado
-
-### 2. Herramientas de Dinámica Molecular
-
-#### GROMACS
-
-Para simulaciones de dinámica molecular, **GROMACS** [4] ofrece:
-
-- Paralelización híbrida (MPI + OpenMP)
-- Escalabilidad en clústers
-- Optimización para arquitecturas CPU/GPU
-
-**Limitaciones**:
-- Ejecución en entornos HPC requiere configuración manual de scripts
-- Definición explícita de recursos necesaria
-- Manejo independiente de resultados
-- Incremento de complejidad operativa
-
-### 3. Gestión de Recursos en Entornos HPC
-
-#### SLURM Workload Manager
-
-En la capa de infraestructura, **SLURM** [2] es uno de los gestores de colas más utilizados en clústers académicos:
-
-**Características**:
-- Asignación dinámica de recursos
-- Control de prioridades
-- Monitoreo del estado de los jobs
-
-**Limitaciones**:
-- Opera principalmente a nivel de administración de recursos
-- No provee abstracciones orientadas a experimentos científicos
-- Interacción basada en scripts y comandos de bajo nivel (`sbatch`, `squeue`, `scancel`)
-- Exige conocimientos técnicos específicos por parte de los usuarios
-
-### 4. Monitoreo de Infraestructura en Entornos HPC
-
-#### Prometheus
-
-En cuanto al monitoreo de infraestructuras distribuidas, **Prometheus** [5] se ha consolidado como una de las herramientas más utilizadas:
-
-**Funcionalidades**:
-- Recolección y análisis de métricas en sistemas distribuidos
-- Modelo de series temporales
-- Lenguaje de consulta especializado (PromQL)
-- Supervisión de múltiples nodos en infraestructuras HPC
-
-**Capacidades de Monitoreo**:
-- Uso de CPU
-- Memoria
-- Almacenamiento
-- Aceleradores GPU
-
-**Limitaciones**:
-- Proporciona capacidades robustas de observabilidad del sistema
-- **NO** está orientado a la orquestación de pipelines científicos
-- **NO** gestiona experimentos de docking molecular
-- Funcionalidad limitada al monitoreo de infraestructura
-- Sin automatización integral de flujos de trabajo científicos
-
-### 5. Limitaciones del Ecosistema Actual
-
-Desde una perspectiva arquitectónica, se observa que:
-
-| Categoría | Herramientas | Enfoque |
-|-----------|-------------|---------|
-| **Cálculo Científico** | AutoDock-GPU, GROMACS | Procesamiento científico |
-| **Gestión de Recursos** | SLURM | Administración de infraestructura |
-| **Monitoreo** | Prometheus | Recolección y análisis de métricas del sistema |
-
-**Ninguna integra de manera nativa**:
-- ❌ Almacenamiento científico estructurado (NAS)
-- ❌ Monitoreo orientado a experimentos
-- ❌ Control de reproducibilidad específico para docking académico
-
-### Vacío Identificado
-
-Esta fragmentación implica que el investigador debe asumir la responsabilidad de integrar manualmente múltiples capas tecnológicas:
-
-1. Preparación de datos
-2. Generación de scripts
-3. Envío al clúster
-4. Seguimiento de ejecución
-5. Recuperación de resultados
-6. Análisis posterior
-
-**Resultado**: Una arquitectura implícita, no formalizada, dependiente de prácticas individuales y vulnerable a inconsistencias.
-
-### Conclusión
-
-Por tanto, el vacío identificado no corresponde a la ausencia de herramientas de cálculo eficientes, sino a **la falta de una arquitectura integradora** que articule:
-
-- ✅ Computación científica
-- ✅ Gestión HPC
-- ✅ Almacenamiento centralizado
-- ✅ Monitoreo experimental
-
-...bajo un modelo coherente, modular y reproducible.
-
----
-
-## 🏗️ Diagramas de Arquitectura (Modelo C4)
-
-Para ilustrar el diseño modular y desacoplado propuesto para ChemLink, se presenta a continuación el **Modelo C4** de la plataforma. Este modelo detalla la estructura desde el contexto de alto nivel hasta la implementación a nivel de código.
-
-### Nivel 1: Diagrama de Contexto
-
-El diagrama de contexto muestra cómo ChemLink interactúa con los usuarios (investigadores) y sistemas externos (SLURM, NAS, herramientas científicas).
-
-![Diagrama de Contexto](../informes/images/c1model.drawio.png)
-
-**Figura 1: Nivel 1 - Contexto del Sistema ChemLink**
-
-Este nivel representa:
-- Investigadores que interactúan con el sistema
-- Relación con el clúster HPC via SLURM
-- Integración con almacenamiento NAS
-- Conexión con herramientas científicas (AutoDock-GPU, fpocket)
-
----
-
-### Nivel 2: Diagrama de Contenedores
-
-El diagrama de contenedores descompone ChemLink en sus componentes principales y muestra cómo se comunican entre sí.
-
-![Diagrama de Contenedores](../informes/images/containermodel.drawio.png)
-
-**Figura 2: Nivel 2 - Contenedores del Sistema**
-
-Este nivel muestra:
-- CLI Interface: Punto de entrada para usuarios
-- Core Pipeline: Motor de orquestación
-- Adapters: Wrappers para herramientas externas
-- Storage Manager: Gestión de almacenamiento
-- SLURM Interface: Comunicación con el gestor de colas
-
----
-
-### Nivel 3: Diagrama de Componentes
-
-El diagrama de componentes profundiza en la estructura interna de cada contenedor, mostrando los módulos específicos y sus responsabilidades.
-
-![Diagrama de Componentes](../informes/images/Componentmodel.drawio.png)
-
-**Figura 3: Nivel 3 - Componentes Detallados**
-
-Este nivel detalla:
-- Módulos del CLI (comandos: run, prepare, analyze, report)
-- Componentes del Core (workflow manager, job orchestrator)
-- Adaptadores específicos (AutoDock-GPU, fpocket, AutoDockTools)
-- Utilidades (logger, validator, resource detector)
-
----
-
-### Nivel 4: Diagrama de Código
-
-El diagrama de código muestra la implementación a nivel de clases, interfaces y relaciones entre objetos.
-
-![Diagrama de Código](../informes/images/Codediagram.drawio.png)
-
-**Figura 4: Nivel 4 - Estructura de Clases**
-
-Este nivel presenta:
-- Clases del dominio (Ligand, Receptor, DockingResult)
-- Interfaces de adaptadores (DockingAdapter, PocketDetectorAdapter)
-- Implementaciones concretas
-- Patrones de diseño aplicados (Adapter, Strategy, Pipeline)
-
----
-
-### Resumen del Modelo C4
-
-El Modelo C4 proporciona una visión completa de la arquitectura de ChemLink en cuatro niveles de abstracción:
-
-1. **Contexto**: Vista de alto nivel del sistema y sus interacciones
-2. **Contenedores**: Componentes de ejecución principales
-3. **Componentes**: Módulos funcionales específicos
-4. **Código**: Implementación detallada a nivel de clases
-
-Esta arquitectura modular permite:
-- ✅ Separación clara de responsabilidades
-- ✅ Facilidad de mantenimiento y extensión
-- ✅ Testeabilidad independiente de componentes
-- ✅ Escalabilidad del sistema
-
----
-
-## 📋 Requerimientos Preliminares
-
-### Requerimientos Funcionales
-
-El sistema debe cumplir con las siguientes funcionalidades:
-
-#### RF1: Generación de Scripts para SLURM
-- Generar automáticamente scripts de ejecución para SLURM
-- Incluir configuración de recursos (CPU, GPU, memoria)
-- Definir dependencias entre jobs
-
-#### RF2: Envío de Jobs al Clúster
-- Enviar jobs al clúster de cómputo mediante comandos SLURM
-- Validar pre-condiciones antes del envío
-- Manejar errores de envío
-
-#### RF3: Monitoreo de Estado
-- Monitorear el estado de ejecución de los experimentos
-- Consultar estado mediante `squeue`/`sacct`
-- Notificar cambios de estado relevantes
-
-#### RF4: Ejecución de Herramientas Científicas
-- Ejecutar herramientas científicas como:
-  - AutoDock-GPU para docking molecular
-  - Fpocket [6] para detección de sitios de unión
-  - AutoDockTools para preparación de archivos
-
-#### RF5: Almacenamiento de Resultados
-- Almacenar resultados de experimentos en el sistema NAS del laboratorio
-- Organizar resultados por experimento y timestamp
-- Mantener estructura de directorios coherente
-
-#### RF6: Generación de Reportes
-- Generar reportes estructurados a partir de los resultados obtenidos
-- Incluir métricas relevantes (afinidad, RMSD)
-- Exportar en formatos múltiples (CSV, JSON, Markdown)
-
----
-
-### Requerimientos No Funcionales
-
-El sistema debe satisfacer los siguientes criterios de calidad:
-
-#### RNF1: Rendimiento
-- El sistema no debe introducir una sobrecarga mayor al **5%** respecto a la ejecución manual de los experimentos
-- Mantener tiempos de respuesta aceptables en operaciones interactivas
-
-#### RNF2: Disponibilidad
-- Disponibilidad del sistema **≥ 95%** durante las pruebas experimentales
-- Recuperación automática ante fallos menores
-
-#### RNF3: Concurrencia
-- Soporte para ejecución concurrente de múltiples experimentos
-- Gestión adecuada de recursos compartidos
-- Prevención de condiciones de carrera
-
-#### RNF4: Trazabilidad
-- Garantizar trazabilidad completa de los experimentos
-- Registro de:
-  - Parámetros de configuración
-  - Historial de ejecuciones
-  - Resultados generados
-- Logs estructurados con timestamps
-
-#### RNF5: Extensibilidad
-- Arquitectura modular y extensible
-- Permitir integrar nuevas herramientas científicas en el futuro
-- Interfaces bien definidas entre componentes
-
-#### RNF6: Usabilidad
-- Interfaz CLI intuitiva y bien documentada
-- Mensajes de error claros y accionables
-- Documentación completa de comandos y opciones
-
----
-
-## ✅ Criterios de Aceptación Inicial
-
-Para considerar la primera versión del sistema como funcional, debe cumplir los siguientes criterios:
-
-### CA1: Ejecución Completa con Comando Único
-- ✅ El sistema ejecuta un docking completo con un solo comando
-- El comando debe ser del tipo: `chemlink run --ligands <dir> --receptor <file>`
-
-### CA2: Envío Correcto a SLURM
-- ✅ El job es enviado correctamente a SLURM
-- Se genera script sbatch válido
-- El job aparece en la cola (`squeue`)
-
-### CA3: Monitoreo Automático
-- ✅ El estado puede ser consultado automáticamente
-- El sistema detecta completitud o fallos
-- Provee información actualizada del progreso
-
-### CA4: Almacenamiento Correcto
-- ✅ Los resultados se almacenan correctamente en NAS
-- Estructura de directorios organizada
-- Archivos de salida accesibles
-
-### CA5: Generación de Reporte
-- ✅ Se genera un reporte estructurado al finalizar
-- Incluye métricas clave (afinidad, RMSD)
-- Formato legible y reproducible
-
-### CA6: Automatización Completa
-- ✅ No se requieren intervenciones manuales intermedias
-- El flujo completo es autónomo
-- Manejo de errores sin supervisión humana
-
----
-
-## 📅 Plan de Trabajo
-
-El desarrollo del proyecto se organizará en **5 fases principales** distribuidas a lo largo de **12 semanas** (desde la semana 4 hasta la semana 15 del semestre académico).
-
-### Fase 1: Análisis y Especificación (Semanas 4-7)
-
-**Actividades**:
-1. **Análisis del problema y entorno HPC** (S4-S5)
-   - Caracterización del clúster Chemlab
-   - Identificación de restricciones técnicas
-   - Análisis de herramientas existentes
-
-2. **Requerimientos y métricas** (S5-S6)
-   - Definición de requerimientos funcionales
-   - Especificación de métricas de desempeño
-   - Criterios de aceptación
-
-3. **Arquitectura de alto nivel** (S6-S7)
-   - Diseño del Modelo C4
-   - Definición de capas del sistema
-   - Interfaces entre componentes
-
-**Entregables**:
-- Documento de requerimientos
-- Documento de arquitectura
-- Diagrama C4 completo
-
----
-
-### Fase 2: Diseño Detallado y Preparación (Semanas 7-10)
-
-**Actividades**:
-1. **Diseño interno de módulos** (S7-S8)
-   - Especificación de clases y métodos
-   - Definición de interfaces de adaptadores
-   - Diseño de estructuras de datos
-
-2. **Diseño de paralelización híbrida** (S8-S9)
-   - Estrategia de ejecución local (multiprocessing)
-   - Estrategia de ejecución distribuida (SLURM)
-   - Mecanismos de sincronización
-
-3. **Validación de entorno HPC y baseline** (S9-S10)
-   - Pruebas de conectividad con SLURM
-   - Medición de tiempos de ejecución manual (baseline)
-   - Validación de acceso a NAS
-
-**Entregables**:
-- Diseño detallado de módulos
-- Especificación de paralelización
-- Métricas baseline del sistema actual
-
----
-
-### Fase 3: Implementación Modular (Semanas 10-14)
-
-**Actividades**:
-1. **Implementación CLI** (S10-S11)
-   - Desarrollo de comandos principales
-   - Validación de argumentos
-   - Manejo de errores de usuario
-
-2. **Implementación Core Pipeline** (S11-S12)
-   - Workflow manager
-   - Job orchestrator
-   - Pipeline executor
-
-3. **Integración con AutoDock-GPU** (S12-S13)
-   - Adapter para AutoDock-GPU
-   - Preparación de archivos PDBQT
-   - Ejecución y parsing de resultados
-
-4. **Paralelización multiproceso y clúster** (S13-S14)
-   - Implementación de modo local
-   - Generación de scripts SLURM
-   - Monitoreo de jobs distribuidos
-
-5. **Control de recursos y tolerancia a fallos** (S14-S15)
-   - Detección de recursos disponibles
-   - Timeouts y reintentos
-   - Logging de errores
-
-**Entregables**:
-- Código fuente completo
-- Suite de tests unitarios
-- Documentación de código
-
----
-
-### Fase 4: Análisis y Reportes (Semana 15)
-
-**Actividades**:
-1. **Módulo de análisis** (S15)
-   - Cálculo de afinidad y RMSD
-   - Ranking de ligandos
-   - Estadísticas descriptivas
-
-2. **Generación de reportes reproducibles** (S15)
-   - Exportación a CSV/JSON
-   - Generación de reportes Markdown
-   - Visualización básica de resultados
-
-**Entregables**:
-- Módulo de análisis funcional
-- Ejemplos de reportes generados
-
----
-
-### Fase 5: Evaluación y Consolidación (Semana 15)
-
-**Actividades**:
-1. **Evaluación de desempeño**
-   - Medición de speedup paralelo
-   - Cálculo de eficiencia computacional
-   - Comparación con baseline
-
-2. **Optimización final**
-   - Identificación de bottlenecks
-   - Optimizaciones de performance
-   - Ajuste de parámetros
-
-3. **Integración total y preparación final**
-   - Pruebas de integración completas
-   - Documentación de usuario
-   - Preparación de presentación
-
-**Entregables**:
-- Reporte de evaluación de desempeño
-- Documentación completa del sistema
-- Presentación final del proyecto
-
----
-
-### Cronograma Visual
-
-| Fase | Actividad | S4 | S5 | S6 | S7 | S8 | S9 | S10 | S11 | S12 | S13 | S14 | S15 |
-|------|-----------|----|----|----|----|----|----|-----|-----|-----|-----|-----|-----|
-| **Fase 1** | Análisis problema y HPC | X | X | | | | | | | | | | |
-| | Requerimientos y métricas | | X | X | | | | | | | | | |
-| | Arquitectura alto nivel | | | X | X | | | | | | | | |
-| **Fase 2** | Diseño módulos | | | | X | X | | | | | | | |
-| | Diseño paralelización | | | | | X | X | | | | | | |
-| | Validación HPC y baseline | | | | | | X | X | | | | | |
-| **Fase 3** | Implementación CLI | | | | | | | X | X | | | | |
-| | Core Pipeline | | | | | | | | X | X | | | |
-| | Integración AutoDock-GPU | | | | | | | | | X | X | | |
-| | Paralelización | | | | | | | | | | X | X | |
-| | Control recursos y fallos | | | | | | | | | | | X | X |
-| **Fase 4** | Módulo análisis | | | | | | | | | | | | X |
-| | Generación reportes | | | | | | | | | | | | X |
-| **Fase 5** | Evaluación desempeño | | | | | | | | | | | | X |
-| | Optimización final | | | | | | | | | | | | X |
-| | Integración y preparación | | | | | | | | | | | | X |
-
-**Nota**: Las semanas indicadas (S4 a S15) corresponden a las semanas académicas del semestre en curso, y no a las semanas transcurridas desde el inicio del proyecto.
-
----
-
-## ⚠️ Riesgos del Proyecto
-
-El desarrollo de una plataforma científica orientada a entornos de cómputo de alto rendimiento implica ciertos riesgos técnicos y operativos que deben ser identificados y gestionados:
-
-### Riesgo 1: Complejidad Técnica de Integración
-
-**Descripción**:  
-El sistema debe integrar múltiples componentes heterogéneos:
-- Generación de scripts para SLURM
-- Ejecución de herramientas científicas como AutoDock-GPU
-- Gestión de almacenamiento en NAS
-- Coordinación en un entorno HPC distribuido
-
-**Impacto**: Alto  
-**Probabilidad**: Media
-
-**Consecuencias**:
-- Desafíos de estabilidad del sistema
-- Problemas de coordinación de recursos
-- Dificultades en la sincronización de componentes
-
-**Mitigación**:
-- Diseño modular con interfaces bien definidas
-- Pruebas de integración continuas
-- Implementación incremental con validación en cada fase
-
----
-
-### Riesgo 2: Plazos de Desarrollo
-
-**Descripción**:  
-La implementación y las pruebas rigurosas en un entorno de clúster real pueden requerir más tiempo del previsto.
-
-**Impacto**: Medio  
-**Probabilidad**: Media
-
-**Consecuencias**:
-- Retraso en la fase de evaluación
-- Tiempo insuficiente para optimizaciones
-- Menor número de casos de prueba ejecutados
-
-**Mitigación**:
-- Planificación detallada con márgenes de tiempo
-- Ejecución de pruebas en paralelo al desarrollo
-- Priorización de funcionalidades críticas
-- Uso de entornos de prueba simulados inicialmente
-
----
-
-### Riesgo 3: Curva de Aprendizaje
-
-**Descripción**:  
-La adopción inicial del sistema por parte de los investigadores puede verse afectada si la interfaz de línea de comandos (CLI) y los flujos de uso no se diseñan de forma suficientemente clara e intuitiva.
-
-**Impacto**: Bajo-Medio  
-**Probabilidad**: Media
-
-**Consecuencias**:
-- Resistencia al uso del sistema
-- Mayor necesidad de soporte y documentación
-- Posibles errores de usuario
-
-**Mitigación**:
-- Diseño de CLI con mensajes claros y ayuda contextual
-- Documentación exhaustiva con ejemplos
-- Sesiones de capacitación para usuarios
-- Validación de usabilidad con usuarios reales
-
----
-
-### Riesgo 4: Disponibilidad de Recursos HPC
-
-**Descripción**:  
-El acceso al clúster HPC para pruebas puede verse limitado por:
-- Uso concurrente por otros proyectos
-- Mantenimientos programados
-- Fallos de hardware
-
-**Impacto**: Medio  
-**Probabilidad**: Baja
-
-**Consecuencias**:
-- Retrasos en validación experimental
-- Imposibilidad de realizar benchmarks completos
-- Resultados de pruebas incompletos
-
-**Mitigación**:
-- Coordinación anticipada con administradores del clúster
-- Desarrollo de entornos de prueba locales
-- Planificación flexible de actividades de testing
-
----
-
-### Riesgo 5: Cambios en Herramientas Externas
-
-**Descripción**:  
-Actualizaciones o cambios en herramientas externas (AutoDock-GPU, fpocket) pueden introducir incompatibilidades.
-
-**Impacto**: Bajo  
-**Probabilidad**: Baja
-
-**Consecuencias**:
-- Necesidad de adaptar código
-- Fallos en ejecución de experimentos
-- Resultados inconsistentes
-
-**Mitigación**:
-- Versionado explícito de dependencias
-- Tests de regresión automatizados
-- Implementación de adaptadores desacoplados
-
----
-
-## 📚 Referencias Bibliográficas
-
-### [1] AutoDock-GPU
-A. Santos-Martins et al., "Accelerating AutoDock4 with GPUs and Gradient-Based Local Search," *Journal of Chemical Theory and Computation*, vol. 42, no. 2, pp. 1060-1073, 2021.  
-Disponible: [https://github.com/ccsb-scripps/AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU)
-
-### [2] SLURM Workload Manager
-A. B. Yoo, M. A. Jette, y M. Grondona, "Slurm: Simple linux utility for resource management," en *Job Scheduling Strategies for Parallel Processing*, 2003, pp. 44-60.  
-Disponible: [https://slurm.schedmd.com/](https://slurm.schedmd.com/)
-
-### [3] AutoDock Vina
-O. Trott y A. J. Olson, "AutoDock Vina: Improving the speed and accuracy of docking with a new scoring function, efficient optimization, and multithreading," *Journal of Computational Chemistry*, vol. 31, no. 2, pp. 455-461, 2010.  
-Disponible: [https://autodock.scripps.edu/](https://autodock.scripps.edu/)
-
-### [4] GROMACS
-M. J. Abraham et al., "GROMACS: High performance molecular simulations through multi-level parallelism from laptops to supercomputers," *SoftwareX*, vol. 1-2, pp. 19-25, 2015.  
-Disponible: [https://www.gromacs.org/](https://www.gromacs.org/)
-
-### [5] Prometheus Monitoring System
-B. Sigelman et al., "Prometheus: A Next-Generation Monitoring System," in *Proc. IEEE/ACM Int. Conf. on Cloud Engineering (IC2E)*, Tempe, AZ, USA, 2015, pp. 27-32.  
-Disponible: [https://prometheus.io/](https://prometheus.io/)
-
-### [6] Fpocket
-V. Le Guilloux, P. Schmidtke, y P. Tuffery, "Fpocket: An open source platform for ligand pocket detection," *BMC Bioinformatics*, vol. 10, no. 168, 2009.  
-Disponible: [https://github.com/fpocket/fpocket](https://github.com/fpocket/fpocket)
-
----
-
-## 📎 Anexos
-
-### A. Estructura de Directorios del Proyecto
-
-```
-chemlink/
-├── cli/                    # Interfaz CLI
-│   ├── main.py            # Entry point
-│   └── commands/          # Comandos implementados
-│       ├── run.py         # Comando de ejecución
-│       ├── prepare.py     # Preparación de archivos
-│       ├── analyze.py     # Análisis de resultados
-│       └── report.py      # Generación de reportes
-├── adapters/              # Adaptadores externos
-│   ├── autodock_gpu/      # Wrapper AutoDock-GPU
-│   │   └── autodock_gpu_adapter.py
-│   ├── autodocktools/     # Wrapper AutoDockTools
-│   │   ├── __init__.py
-│   │   └── autodocktools_adapter.py
-│   └── fpocket/           # Wrapper fpocket
-│       └── fpocket_adapter.py
-├── pipelines/             # Pipelines de ejecución
-│   ├── docking_pipeline.py
-│   └── steps/             # Etapas del pipeline
-├── workflows/             # Gestión de workflows
-│   ├── workflow_manager.py
-│   └── job_orchestrator.py
-├── hpc/                   # Integración HPC
-│   ├── slurm/             # Interface SLURM
-│   │   └── slurm_monitor.py
-│   └── cluster/           # Gestión de cluster
-│       └── resource_detector.py
-├── storage/               # Gestión de almacenamiento
-│   ├── file_manager.py
-│   ├── dataset_manager.py
-│   └── nas_storage.py
-├── analysis/              # Análisis de resultados
-│   └── report_generator.py
-├── utils/                 # Utilidades
-│   ├── logger.py          # Sistema de logging
-│   ├── validator.py       # Validación de inputs
-│   └── molecule_processor.py
-├── data/                  # Datos entrada/salida
-│   └── input/
-│       ├── ligands/       # Ligandos de entrada
-│       └── receptors/     # Receptores (proteínas)
-├── tests/                 # Suite de tests
-│   ├── unit/              # Tests unitarios
-│   ├── integration/       # Tests de integración
-│   └── data/              # Datos de prueba
-├── docs/                  # Documentación
-│   ├── user_guide.md      # Guía de usuario
-│   └── api_reference.md   # Referencia de API
-├── images/                # Diagramas de arquitectura
-│   ├── c1model.drawio.png
-│   ├── containermodel.drawio.png
-│   ├── Componentmodel.drawio.png
-│   └── Codediagram.drawio.png
-├── informes/              # 📍 ESTE DIRECTORIO
-│   ├── Informe_I_Chemlink.pdf
-│   └── README.md          # 📍 ESTE ARCHIVO
-├── docker/                # Dockerfiles
-├── scripts/               # Scripts auxiliares
-├── pyproject.toml         # Configuración del proyecto
-├── requirements.txt       # Dependencias Python
-├── README.md              # README principal
-├── ARCHITECTURE.md        # Documentación de arquitectura
-├── PROPOSAL.md            # Propuesta técnica
-└── LICENSE                # Licencia MIT
-```
-
-### B. Glosario de Términos
-
-- **CADD**: Computer-Aided Drug Design (Diseño de Fármacos Asistido por Computador)
-- **Docking Molecular**: Técnica computacional para predecir orientación de ligandos en sitios activos
-- **GPU**: Graphics Processing Unit (Unidad de Procesamiento Gráfico)
-- **HPC**: High-Performance Computing (Computación de Alto Rendimiento)
-- **NAS**: Network-Attached Storage (Almacenamiento Conectado a la Red)
-- **PDBQT**: Formato de archivo con cargas parciales para AutoDock
-- **Pipeline**: Secuencia automatizada de pasos de procesamiento
-- **RMSD**: Root Mean Square Deviation (Desviación Cuadrática Media)
-- **SLURM**: Simple Linux Utility for Resource Management
-- **Workflow**: Flujo de trabajo automatizado
-
-### C. Acrónimos
-
-- **API**: Application Programming Interface
-- **CLI**: Command-Line Interface
-- **CPU**: Central Processing Unit
-- **CSV**: Comma-Separated Values
-- **JSON**: JavaScript Object Notation
-- **MPI**: Message Passing Interface
-- **OpenMP**: Open Multi-Processing
-- **PDB**: Protein Data Bank
-
-### D. Contacto y Recursos del Proyecto
-
-**Autores**:
-- Juan Felipe Santos Rodríguez
-- Samuel Matiz García
-- Camilo Andrés Navarro Navarro
-
-**Institución**:  
-Universidad del Norte  
-Barranquilla, Colombia
-
-**Docente**: Augusto Salazar  
-**Co-asesor**: Daniel Romero
-
-**Laboratorio**: Chemlab - Facultad de Ciencias
-
-**Recursos del Proyecto**:
-- Repositorio GitHub: [github.com/chemlab/chemlink](https://github.com/chemlab/chemlink)
-- Documentación: [chemlink.readthedocs.io](https://chemlink.readthedocs.io)
-
----
-
-<p align="center">
-  <i>Informe Técnico I - Propuesta de Proyecto</i><br/>
-  <b>ChemLink</b><br/>
-  Plataforma de Orquestación para Docking Molecular en Entornos HPC<br/>
-  <br/>
-  <i>Universidad del Norte - Barranquilla, Colombia</i><br/>
-  <i>Marzo 2026</i>
-</p>
-
----
-
-## 📄 Contenido del PDF
-
-Este README documenta completamente el contenido del archivo PDF adjunto:
-
-**Informe_I_Chemlink.pdf** (Marzo 2026)  
-Informe Técnico Número I - Propuesta del Proyecto  
-Trabajo de Final de Grado - Ingeniería de Sistemas (2026-10)
-
-El documento PDF y este README contienen la propuesta formal del proyecto ChemLink desarrollado en la Universidad del Norte por Juan Felipe Santos Rodríguez, Samuel Matiz García y Camilo Andrés Navarro Navarro, bajo la dirección del profesor Augusto Salazar y el co-asesor Daniel Romero.
+[I1] README del proyecto ChemLink: /home/pipe/Universidad/proyecto_final/chemlink/README.md  
+[I2] Documento de arquitectura: /home/pipe/Universidad/proyecto_final/chemlink/ARCHITECTURE.md  
+[I3] Dependencias Python: /home/pipe/Universidad/proyecto_final/chemlink/requirements.txt  
+[I4] Orquestador de pipeline: /home/pipe/Universidad/proyecto_final/chemlink/pipelines/docking/docking_pipeline.py  
+[I5] Referencia de comandos: /home/pipe/Universidad/proyecto_final/chemlink/command.md  
+[I6] Soporte SLURM: /home/pipe/Universidad/proyecto_final/chemlink/hpc/slurm/README.md  
+[I7] Entrada CLI principal: /home/pipe/Universidad/proyecto_final/chemlink/cli/main.py

@@ -1,5 +1,6 @@
-# Informe II ChemLink
+# Informe Tecnico del Proyecto ChemLink
 
+Versión: 1.1  
 Fecha: 2026-04-08
 
 ## Resumen
@@ -181,6 +182,34 @@ La arquitectura implementada sigue un enfoque por capas y componentes:
 
 Esta descomposición minimiza acoplamiento y facilita pruebas unitarias por componente [I2][I4].
 
+### 8.3 Diagramas de arquitectura
+
+La solución se documenta además con los siguientes diagramas, reutilizados desde el primer informe y almacenados en [`informes/images`](informes/images).
+
+#### Diagrama de contexto
+
+![Diagrama de contexto del sistema](informes/images/Codediagram.drawio.png)
+
+Este diagrama resume el entorno general de ChemLink, los actores del sistema y su interacción con el ecosistema HPC y las herramientas científicas externas.
+
+#### Diagrama de contenedores
+
+![Diagrama de contenedores de ChemLink](informes/images/containermodel.drawio.png)
+
+Este diagrama muestra la distribución lógica de los principales contenedores funcionales del sistema, incluyendo la CLI, el pipeline y los módulos de soporte.
+
+#### Diagrama C1
+
+![Diagrama C1 de ChemLink](informes/images/c1model.drawio.png)
+
+Este diagrama presenta la vista de contexto ampliada y ayuda a entender cómo se relaciona el usuario con la orquestación del pipeline y la infraestructura de ejecución.
+
+#### Diagrama de componentes
+
+![Diagrama de componentes de ChemLink](informes/images/Componentmodel.drawio.png)
+
+Este diagrama detalla la descomposición interna del sistema en componentes reutilizables, alineada con la arquitectura modular del código fuente.
+
 ## 9. Implementación
 
 ### 9.1 Stack tecnológico
@@ -287,4 +316,12 @@ El proyecto muestra una base madura para operación real en laboratorio: la CLI 
 [7] SchedMD, Slurm Workload Manager Documentation, https://slurm.schedmd.com/documentation.html  
 [8] Apptainer Project, Apptainer User Guide, https://apptainer.org/docs/
 
+### Referencias internas del proyecto
 
+[I1] README del proyecto ChemLink: /home/pipe/Universidad/proyecto_final/chemlink/README.md  
+[I2] Documento de arquitectura: /home/pipe/Universidad/proyecto_final/chemlink/ARCHITECTURE.md  
+[I3] Dependencias Python: /home/pipe/Universidad/proyecto_final/chemlink/requirements.txt  
+[I4] Orquestador de pipeline: /home/pipe/Universidad/proyecto_final/chemlink/pipelines/docking/docking_pipeline.py  
+[I5] Referencia de comandos: /home/pipe/Universidad/proyecto_final/chemlink/command.md  
+[I6] Soporte SLURM: /home/pipe/Universidad/proyecto_final/chemlink/hpc/slurm/README.md  
+[I7] Entrada CLI principal: /home/pipe/Universidad/proyecto_final/chemlink/cli/main.py
