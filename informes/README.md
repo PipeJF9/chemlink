@@ -1,4 +1,4 @@
-# Informe Tecnico del Proyecto ChemLink
+# Informe II - ChemLink: Framework CLI Integral para Modelado Molecular Distribuido en Cluster HPC
 
 ## Introducción
 
