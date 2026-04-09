@@ -1,7 +1,5 @@
 # Informe Tecnico del Proyecto ChemLink
 
-Fecha: 2026-04-08
-
 ## Introducción
 
 ChemLink es una plataforma CLI orientada a química computacional y ejecución distribuida en entornos HPC. Su propósito es automatizar pipelines de docking molecular para disminuir trabajo manual, mejorar reproducibilidad y aumentar el aprovechamiento de recursos CPU/GPU. El proyecto se desarrolla como trabajo de grado en Ingeniería de Sistemas con enfoque en arquitectura de software, HPC y sistemas distribuidos [I1][I2][I3].
