@@ -81,7 +81,7 @@ class ProductionStep:
             self.gmx_bin, "mdrun",
             "-v",
             "-deffnm", self.output_base,
-            "-nt", str(self.config.get("threads", 8))
+            "-ntomp", str(self.config.get("threads", 8))
         ]
 
         try:

@@ -112,7 +112,7 @@ class EquilibrationStep:
             self.gmx_bin, "mdrun", 
             "-v",
             "-deffnm", "nvt", 
-            "-nt", str(self.config.get("threads", 8))
+            "-ntomp", str(self.config.get("threads", 8))
             ]
         subprocess.run(mdrun_nvt, check=True, cwd=self.config["work_dir"])
 
@@ -136,7 +136,7 @@ class EquilibrationStep:
             self.gmx_bin, "mdrun", 
             "-v",
             "-deffnm", "npt", 
-            "-nt", str(self.config.get("threads", 8))
+            "-ntomp", str(self.config.get("threads", 8))
             ]
         subprocess.run(mdrun_npt, check=True, cwd=self.config["work_dir"])
 

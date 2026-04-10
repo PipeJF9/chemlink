@@ -51,7 +51,7 @@ class EnergyMinStep:
             self.gmx_bin, "mdrun",
             "-v", 
             "-deffnm", "em",
-            "-nt", str(self.config.get("threads", 8)) # tomamos el número de threads del config, con un default de 8
+            "-ntomp", str(self.config.get("threads", 8)) # tomamos el número de threads del config, con un default de 8
         ]
 
         try:

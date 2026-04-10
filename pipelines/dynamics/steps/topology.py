@@ -21,7 +21,8 @@ class TopologyStep:
             "-f", self.pdb_input_abs, # <--- Ruta absoluta
             "-o", self.output_gro,
             "-ff", "amber03", 
-            "-water", "tip3p"
+            "-water", "tip3p",
+            "-ignh"
         ]
 
         try:
