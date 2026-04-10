@@ -1,3 +1,8 @@
+#Project-specific gitignore file for Python projects.
+data/output/dynamics/
+data/input/dynamics/
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

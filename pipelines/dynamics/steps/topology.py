@@ -6,39 +6,41 @@ class TopologyStep:
         self.config = config
         self.gmx_bin = gmx_bin
         
-        # Archivos de salida
-        self.output_gro = os.path.join(self.config["work_dir"], "processed_complex.gro")
-        self.output_top = os.path.join(self.config["work_dir"], "topol.top")
-        self.output_itp = os.path.join(self.config["work_dir"], "posre.itp")
+        # Convertimos la entrada a ruta absoluta para evitar el error que tuviste
+        self.pdb_input_abs = os.path.abspath(self.config["pdb_input"])
+        
+        # El archivo de salida será processed.gro dentro del work_dir
+        self.output_gro = "processed.gro" 
 
     def run(self):
-        print(f"[*] Paso 1: Ejecutando pdb2gmx para: {self.config['pdb_input']}")
+        print(f"[*] Paso 1: Generando topología del sistema...")
     
+        # Comando idéntico a tu .sh
         command_cmd = [
             self.gmx_bin, "pdb2gmx",
-            "-f", self.config["pdb_input"],
+            "-f", self.pdb_input_abs, # <--- Ruta absoluta
             "-o", self.output_gro,
-            "-p", self.output_top,
-            "-i", self.output_itp,
             "-ff", "amber03", 
-            "-water", "tip3p",
-            "-ignh"
+            "-water", "tip3p"
         ]
 
         try:
-            # Ejecuta el comando
-            subprocess.run(command_cmd, check=True, capture_output=True, text=True)
+            # Ejecutamos dentro de work_dir para que topol.top se cree ahí
+            subprocess.run(
+                command_cmd, 
+                check=True, 
+                capture_output=True, 
+                text=True, 
+                cwd=self.config["work_dir"] # Aquí es donde se "para" GROMACS
+            )
             
-            # Verificamos que el archivo se creo correctamente
-            if os.path.exists(self.output_top):
-                print(f"[✓] Topología generada exitosamente en: {self.output_top}")
+            # Verificamos si se creó el archivo en la carpeta de trabajo
+            if os.path.exists(os.path.join(self.config["work_dir"], "topol.top")):
+                print(f"[✓] Topología generada exitosamente.")
             else:
-                raise FileNotFoundError("El comando terminó pero no se encontró el archivo .top")
+                raise FileNotFoundError("No se encontró topol.top tras ejecutar pdb2gmx")
 
         except subprocess.CalledProcessError as e:
-            print(f"[X] Error fatal en pdb2gmx:")
-            print(e.stderr) # Esto te da el error exacto de GROMACS
-            raise e
-        except Exception as e:
-            print(f"[X] Error inesperado en el paso de topología: {e}")
+            # Imprimimos el error de GROMACS para debug
+            print(f"[X] Error en pdb2gmx:\n{e.stderr}")
             raise e

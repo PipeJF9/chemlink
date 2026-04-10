@@ -13,8 +13,8 @@ class ProductionStep:
         
         # Salidas
         self.work_mdp = os.path.join(self.config["work_dir"], "md.mdp")
-        self.md_tpr = os.path.join(self.config["work_dir"], "md_0_1.tpr")
-        self.output_base = "md_0_1"
+        self.md_tpr = os.path.join(self.config["work_dir"], "md_1.tpr")
+        self.output_base = "md_1"
 
     def _create_production_mdp(self):
         """Genera el archivo md.mdp dinámicamente con los parámetros del script original."""
