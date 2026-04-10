@@ -13,22 +13,21 @@ class IonsStep:
         # Salidas y Temporales
         self.ions_mdp = os.path.join(self.config["work_dir"], "ions.mdp")
         self.ions_tpr = os.path.join(self.config["work_dir"], "ions.tpr")
-        self.output_gro = os.path.join(self.config["work_dir"], "solvated_ions.gro")
+        self.ionized_gro = os.path.join(self.config["work_dir"], "ionized.gro")
 
-    def _create_ions_mdp(self):
-        """Crea el archivo mdp mínimo para que genion funcione"""
+    def _create_ions_mdp(self): # Crea el archivo mdp mínimo para que genion funcione
         mdp_content = (
-            "; ions.mdp - Generado por ChemLink\n"
-            "continuation = no\n"
-            "constraints  = none\n"
+            "integrator  = steep\n"
+            "emtol       = 1000.0\n"
+            "emstep      = 0.01\n"
+            "nsteps      = 50000\n"
+            "nstlist     = 1\n"
             "cutoff-scheme = Verlet\n"
-            "ns_type      = grid\n"
-            "nstlist      = 1\n"
-            "vdw-type     = Cut-off\n"
-            "rvdw         = 1.0\n"
-            "coulombtype  = cut-off\n"
-            "rcoulomb     = 1.0\n"
-            "pbc          = xyz\n"
+            "ns_type     = grid\n"
+            "coulombtype = cutoff\n"
+            "rcoulomb    = 1.0\n"
+            "rvdw        = 1.0\n"
+            "pbc         = xyz\n"
         )
         with open(self.ions_mdp, "w") as f:
             f.write(mdp_content)
@@ -47,15 +46,15 @@ class IonsStep:
             "-c", self.solvated_gro,
             "-p", self.topol,
             "-o", self.ions_tpr,
-            "-maxwarn", "1"
+            "-maxwarn", "10"
         ]
 
         # 3. Añadir Iones con genion
-        # Enviamos "13" que es el grupo SOL (agua) en Amber para ser reemplazado por iones
+        # Enviamos "13" que es el grupo SOL (agua) en Amber para ser reemplazado por iones PREGUNTAR
         genion_cmd = [
             self.gmx_bin, "genion",
             "-s", self.ions_tpr,
-            "-o", self.output_gro,
+            "-o", self.ionized_gro,
             "-p", self.topol,
             "-pname", "NA",
             "-nname", "CL",
@@ -74,7 +73,7 @@ class IonsStep:
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(process.returncode, genion_cmd, stderr)
 
-            print(f"[✓] Sistema neutralizado: {os.path.basename(self.output_gro)}")
+            print(f"[✓] Sistema neutralizado: {os.path.basename(self.ionized_gro)}")
             print(f"[✓] Topología actualizada con iones en {os.path.basename(self.topol)}")
             
         except subprocess.CalledProcessError as e:

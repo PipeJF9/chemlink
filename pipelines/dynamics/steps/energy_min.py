@@ -7,18 +7,16 @@ class EnergyMinStep:
         self.gmx_bin = gmx_bin
         
         # Entradas
-        self.input_gro = os.path.join(self.config["work_dir"], "solvated_ions.gro")
+        self.input_gro = os.path.join(self.config["work_dir"], "ionized.gro")
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         
         self.em_mdp = os.path.join(self.config["work_dir"], "em.mdp")
         self.em_tpr = os.path.join(self.config["work_dir"], "em.tpr")
-        self.output_gro = os.path.join(self.config["work_dir"], "em.gro")
+        self.em_gro = os.path.join(self.config["work_dir"], "em.gro")
         # em_log = os.path.join(self.config["work_dir"], "em.log") lo quitamos porque gmx mdrun ya lo genera automáticamente
 
     def _create_em_mdp(self):
-        """Crea el archivo mdp basado en tu lógica de Dinamica.sh"""
         mdp_content = (
-            "; em.mdp - Minimización de Energía\n"
             "integrator  = steep\n"
             "emtol       = 1000.0\n"
             "emstep      = 0.01\n"
@@ -45,7 +43,7 @@ class EnergyMinStep:
             "-c", self.input_gro,
             "-p", self.topol,
             "-o", self.em_tpr,
-            "-maxwarn", "2"
+            "-maxwarn", "10"
         ]
 
         # 2. mdrun
@@ -53,7 +51,7 @@ class EnergyMinStep:
             self.gmx_bin, "mdrun",
             "-v", 
             "-deffnm", "em",
-            "-nt", str(self.config.get("threads", 8))
+            "-nt", str(self.config.get("threads", 8)) # tomamos el número de threads del config, con un default de 8
         ]
 
         try:
@@ -63,8 +61,8 @@ class EnergyMinStep:
             print("   -> Minimizando (revisar em.log para detalles)...")
             subprocess.run(mdrun_cmd, check=True, cwd=self.config["work_dir"])
 
-            if os.path.exists(self.output_gro):
-                print(f"[✓] Estructura minimizada en: {os.path.basename(self.output_gro)}")
+            if os.path.exists(self.em_gro):
+                print(f"[✓] Estructura minimizada en: {os.path.basename(self.em_gro)}")
             
         except subprocess.CalledProcessError as e:
             print(f"[X] Error en el Paso 4!")

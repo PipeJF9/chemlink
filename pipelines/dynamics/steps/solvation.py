@@ -7,7 +7,7 @@ class SolvationStep:
         self.gmx_bin = gmx_bin
         
         # Entrada (TopologyStep)
-        self.input_gro = os.path.join(self.config["work_dir"], "processed_complex.gro")
+        self.input_gro = os.path.join(self.config["work_dir"], "processed.gro")
         # Entrada y salida
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         # Salida

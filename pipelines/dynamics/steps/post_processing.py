@@ -7,13 +7,13 @@ class PostProcessingStep:
         self.gmx_bin = gmx_bin
         
         # Archivos de entrada (tal cual salen de la producción en el .sh)
-        self.md_tpr = os.path.join(self.config["work_dir"], "md_1.tpr")
-        self.md_xtc = os.path.join(self.config["work_dir"], "md_1.xtc")
+        self.md_tpr = os.path.join(self.config["work_dir"], "md.tpr")
+        self.md_xtc = os.path.join(self.config["work_dir"], "md.xtc")
         
         # Archivos de salida (nombres exactos del .sh)
-        self.no_pbc_xtc = os.path.join(self.config["work_dir"], "md_1_noPBC.xtc")
-        self.final_xtc = os.path.join(self.config["work_dir"], "md_1_center.xtc")
-        self.final_pdb = os.path.join(self.config["work_dir"], "md_1.pdb")
+        self.no_pbc_xtc = os.path.join(self.config["work_dir"], "md_noPBC.xtc")
+        self.final_xtc = os.path.join(self.config["work_dir"], "md_center.xtc")
+        self.final_pdb = os.path.join(self.config["work_dir"], "md.pdb")
 
     def run(self):
         print("\n[*] Paso 7: Post-procesamiento (Limpieza de PBC)...")
