@@ -26,6 +26,7 @@ class DockingJob:
 	ligand_file: str
 	protein_name: str
 	ligand_name: str
+	gpu_id: Optional[int] = None
 
 
 class DockingExecution:
@@ -244,11 +245,17 @@ class DockingExecution:
 			str(self.nev),
 		]
 
+		env = None
+		if job.gpu_id is not None:
+			env = os.environ.copy()
+			env["CUDA_VISIBLE_DEVICES"] = str(job.gpu_id)
+
 		result = subprocess.run(
 			cmd,
 			capture_output=True,
 			text=True,
 			timeout=self.timeout_seconds,
+			env=env,
 		)
 
 		if result.returncode != 0:
@@ -298,7 +305,7 @@ class DockingExecution:
 			handle.write(f"  Dockings fallidos: {failures}\n")
 			handle.write(f"  Total: {success + failures}\n\n")
 
-	def run(self, n_workers: Optional[int] = None) -> Dict[str, int]:
+	def run(self, n_workers: Optional[int] = None, gpu_ids: Optional[Sequence[int]] = None) -> Dict[str, int]:
 		"""Run all docking jobs."""
 		initial_map_files = list_files_in_directory(self.protein_maps_dir, [f"*{self.grid_ext}"])
 		self._validate_dependencies(require_autogrid=not bool(initial_map_files))
@@ -317,11 +324,29 @@ class DockingExecution:
 		ligand_names = sorted({job.ligand_name for job in jobs})
 		self._write_config_header(len(protein_names), len(ligand_names), len(jobs))
 
+		if gpu_ids:
+			gpu_ids = [int(gpu_id) for gpu_id in gpu_ids]
+
 		if n_workers is None:
 			n_workers = cpu_count()
+		if gpu_ids:
+			n_workers = len(gpu_ids)
 		n_workers = max(1, min(n_workers, len(jobs)))
 
-		self._log("INFO", f"Iniciando docking con {len(jobs)} combinación(es) usando {n_workers} worker(s)")
+		if gpu_ids:
+			jobs = [
+				DockingJob(
+					protein_map=job.protein_map,
+					ligand_file=job.ligand_file,
+					protein_name=job.protein_name,
+					ligand_name=job.ligand_name,
+					gpu_id=gpu_ids[index % len(gpu_ids)],
+				)
+				for index, job in enumerate(jobs)
+			]
+
+		gpu_note = f" en GPU(s) {','.join(str(g) for g in gpu_ids)}" if gpu_ids else ""
+		self._log("INFO", f"Iniciando docking con {len(jobs)} combinación(es) usando {n_workers} worker(s){gpu_note}")
 
 		successful = 0
 		failed = 0
