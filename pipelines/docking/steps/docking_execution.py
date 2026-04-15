@@ -2,7 +2,6 @@
 
 import os
 import shutil
-import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,6 +11,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from tqdm import tqdm
 
+from ....adapters.autogrid.autogrid_adapter import AutoGridAdapter
+from ....adapters.autodock_gpu.autodock_gpu_adapter import AutoDockGPUAdapter
 from ....storage.file_manager import create_folder, list_files_in_directory, find_compound_name
 from ....utils.logger import setup_logger
 
@@ -61,6 +62,8 @@ class DockingExecution:
 		self.protein_maps_dir = protein_maps_dir
 		self.ligand_dir = ligand_dir
 		self.output_path = output_path
+		self.autogrid = AutoGridAdapter(autogrid_executable)
+		self.autodock_gpu = AutoDockGPUAdapter(autodock_gpu_executable)
 		self.autogrid_executable = autogrid_executable or self.DEFAULT_AUTOGRID_EXECUTABLE
 		self.autodock_gpu_executable = autodock_gpu_executable or self.DEFAULT_AUTODOCK_GPU_EXECUTABLE
 		self.grid_ext = grid_ext
@@ -76,40 +79,12 @@ class DockingExecution:
 		self.config_file = os.path.join(self.output_path, "docking_config.txt")
 		self.summary_file = os.path.join(self.results_dir, "resumen_docking.txt")
 
-	@staticmethod
-	def _resolve_executable(executable: str, fallbacks: Sequence[str] = ()) -> str:
-		"""Resolve an executable from an explicit path, PATH, or fallback locations."""
-		if os.path.isabs(executable) and os.path.isfile(executable):
-			return executable
-
-		resolved = shutil.which(executable)
-		if resolved:
-			return resolved
-
-		for candidate in fallbacks:
-			if os.path.isfile(candidate):
-				return candidate
-
-		return executable
-
 	def _validate_dependencies(self, require_autogrid: bool = True) -> None:
 		"""Validate external executables required by this step."""
 		if require_autogrid:
-			self.autogrid_executable = self._resolve_executable(
-				self.autogrid_executable,
-				fallbacks=(self.DEFAULT_AUTOGRID_EXECUTABLE,),
-			)
-			if not os.path.isfile(self.autogrid_executable):
-				raise FileNotFoundError(f"AutoGrid4 not found: {self.autogrid_executable}")
+			self.autogrid.validate()
 
-		self.autodock_gpu_executable = self._resolve_executable(
-			self.autodock_gpu_executable,
-			fallbacks=self.DEFAULT_AUTODOCK_GPU_FALLBACKS,
-		)
-		if not os.path.isfile(self.autodock_gpu_executable):
-			raise FileNotFoundError(f"AutoDock-GPU not found: {self.autodock_gpu_executable}")
-		if not os.access(self.autodock_gpu_executable, os.X_OK):
-			raise RuntimeError(f"AutoDock-GPU is not executable: {self.autodock_gpu_executable}")
+		self.autodock_gpu.validate()
 
 	def _log(self, level: str, message: str) -> None:
 		"""Write a timestamped message to the step log and stdout."""
@@ -155,28 +130,7 @@ class DockingExecution:
 
 		generated = 0
 		for gpf_file in gpf_files:
-			workdir = os.path.dirname(gpf_file)
-			gpf_name = os.path.basename(gpf_file)
-			base_name = os.path.splitext(gpf_name)[0]
-			glg_file = f"{base_name}.glg"
-			map_file = os.path.join(workdir, f"{base_name}{self.grid_ext}")
-
-			result = subprocess.run(
-				[self.autogrid_executable, "-p", gpf_name, "-l", glg_file],
-				capture_output=True,
-				text=True,
-				cwd=workdir,
-				timeout=300,
-			)
-
-			if result.returncode != 0:
-				raise RuntimeError(
-					f"AutoGrid failed for {os.path.basename(gpf_file)}: {result.stderr.strip()}"
-				)
-			if not os.path.isfile(map_file):
-				raise RuntimeError(
-					f"AutoGrid finished but map file not found: {map_file}"
-				)
+			map_file = self.autogrid.generate_maps(gpf_file)
 			generated += 1
 
 		return generated
@@ -196,28 +150,6 @@ class DockingExecution:
 			"affinity_file": os.path.join(protein_output, "affinity.dat"),
 		}
 
-	def _parse_rmsd_table(self, dlg_path: str) -> Dict[str, str]:
-		"""Extract a simple summary row from an AutoDock DLG file."""
-		affinity = "N/A"
-		run = "N/A"
-		rmsd = "N/A"
-
-		with open(dlg_path, "r", encoding="utf-8", errors="ignore") as handle:
-			content = handle.read().splitlines()
-
-		for index, line in enumerate(content):
-			if "RMSD TABLE" not in line:
-				continue
-			for candidate in content[index + 1 : index + 25]:
-				parts = candidate.split()
-				if len(parts) >= 5 and parts[0].isdigit():
-					run = parts[0]
-					affinity = parts[3]
-					rmsd = parts[4]
-					return {"run": run, "affinity": affinity, "rmsd": rmsd}
-
-		return {"run": run, "affinity": affinity, "rmsd": rmsd}
-
 	def _run_single(self, job: DockingJob) -> Dict[str, Any]:
 		"""Run one docking job."""
 		layout = self._create_output_layout(job.protein_name)
@@ -230,7 +162,7 @@ class DockingExecution:
 				os.remove(path)
 
 		cmd = [
-			self.autodock_gpu_executable,
+			self.autodock_gpu.executable,
 			"-ffile",
 			job.protein_map,
 			"-lfile",
@@ -250,29 +182,25 @@ class DockingExecution:
 			env = os.environ.copy()
 			env["CUDA_VISIBLE_DEVICES"] = str(job.gpu_id)
 
-		result = subprocess.run(
-			cmd,
-			capture_output=True,
-			text=True,
-			timeout=self.timeout_seconds,
-			env=env,
+		result = self.autodock_gpu.dock(
+			protein_map=job.protein_map,
+			ligand_file=job.ligand_file,
+			output_prefix=output_prefix,
+			run_count=self.run_count,
+			lsmet=self.lsmet,
+			nev=self.nev,
+			timeout_seconds=self.timeout_seconds,
+			gpu_id=job.gpu_id,
 		)
 
-		if result.returncode != 0:
-			raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "AutoDock-GPU failed")
-
-		if not os.path.isfile(dlg_file):
-			raise RuntimeError(f"DLG file was not generated: {dlg_file}")
-
-		summary = self._parse_rmsd_table(dlg_file)
 		return {
 			"protein": job.protein_name,
 			"ligand": job.ligand_name,
-			"dlg_file": dlg_file,
-			"xml_file": xml_file if os.path.isfile(xml_file) else None,
-			"affinity": summary["affinity"],
-			"run": summary["run"],
-			"rmsd": summary["rmsd"],
+			"dlg_file": result.dlg_file,
+			"xml_file": result.xml_file,
+			"affinity": result.affinity,
+			"run": result.run,
+			"rmsd": result.rmsd,
 			"protein_output": layout["protein_output"],
 		}
 

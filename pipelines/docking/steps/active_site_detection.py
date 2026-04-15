@@ -1,9 +1,6 @@
 """Active site detection pipeline step for molecular docking."""
 
 import os
-import shutil
-import subprocess
-import tempfile
 import traceback
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +16,8 @@ from ....storage.file_manager import (
 	find_compound_name,
 	create_out_file,
 )
+from ....adapters.autodocktools.autodocktools_adapter import AutoDockToolsAdapter
+from ....adapters.fpocket.fpocket_adapter import FpocketAdapter
 from ....utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -72,8 +71,10 @@ class ActiveSiteDetection:
 		self.ligand_path = ligand_path
 		self.output_path = output_path
 
-		self.fpocket_path = self._resolve_fpocket_path(fpocket_path)
-		self.mgltools_path = mgltools_path or self.DEFAULT_MGLTOOLS_PATH
+		self.fpocket = FpocketAdapter(fpocket_path)
+		self.fpocket_path = self.fpocket.fpocket_path
+		self.autodocktools = AutoDockToolsAdapter(mgltools_path or self.DEFAULT_MGLTOOLS_PATH)
+		self.mgltools_path = self.autodocktools.mgltools_path or self.DEFAULT_MGLTOOLS_PATH
 
 		self.box_padding = box_padding
 		self.autodock_margin = autodock_margin
@@ -95,73 +96,16 @@ class ActiveSiteDetection:
 		self.dimensions_folder = os.path.join(self.output_path, "dimensionsBoxes")
 
 		self.mgltools_python = os.path.join(self.mgltools_path, "bin", "pythonsh")
-		self.prepare_gpf_script = os.path.join(
-			self.mgltools_path,
-			"MGLToolsPckgs",
-			"AutoDockTools",
-			"Utilities24",
-			"prepare_gpf4.py",
-		)
 
 	@property
 	def is_manual_mode(self) -> bool:
 		"""Return True when manual grid center and npts are configured."""
 		return self.manual_center is not None and self.manual_npts is not None
 
-	@classmethod
-	def _resolve_fpocket_path(cls, fpocket_path: Optional[str]) -> str:
-		"""Resolve fpocket executable from explicit path, PATH, or known locations."""
-		if fpocket_path:
-			if os.path.isabs(fpocket_path):
-				return fpocket_path
-			resolved = shutil.which(fpocket_path)
-			if resolved:
-				return resolved
-			return fpocket_path
-
-		resolved = shutil.which("fpocket")
-		if resolved:
-			return resolved
-
-		for candidate in cls.FPOCKET_CANDIDATES:
-			if os.path.isfile(candidate):
-				return candidate
-
-		return cls.DEFAULT_FPOCKET_PATH
-
 	def _validate_dependencies(self) -> None:
 		"""Validate required external binaries and scripts."""
-		if not self.is_manual_mode:
-			if not os.path.isfile(self.fpocket_path):
-				raise FileNotFoundError(
-					f"fpocket not found: {self.fpocket_path}. "
-					"Pass --fpocket-path or ensure fpocket is available in PATH."
-				)
-			if not os.access(self.fpocket_path, os.X_OK):
-				raise RuntimeError(f"fpocket is not executable: {self.fpocket_path}")
-
-		if not os.path.isfile(self.mgltools_python):
-			raise FileNotFoundError(
-				f"MGLTools pythonsh not found: {self.mgltools_python}"
-			)
-		if not os.path.isfile(self.prepare_gpf_script):
-			raise FileNotFoundError(
-				f"prepare_gpf4.py not found: {self.prepare_gpf_script}"
-			)
-
-	def _get_mgltools_env(self) -> Dict[str, str]:
-		"""Build environment variables for MGLTools execution."""
-		env = os.environ.copy()
-		env["MGLTOOLS_HOME"] = self.mgltools_path
-		env["MGL_ROOT"] = self.mgltools_path
-		env["PYTHONPATH"] = os.path.join(
-			self.mgltools_path, "MGLToolsPckgs"
-		) + ":" + env.get("PYTHONPATH", "")
-		env["PATH"] = os.path.join(self.mgltools_path, "bin") + ":" + env.get("PATH", "")
-		env["LD_LIBRARY_PATH"] = os.path.join(
-			self.mgltools_path, "lib"
-		) + ":" + env.get("LD_LIBRARY_PATH", "")
-		return env
+		self.fpocket.validate()
+		self.autodocktools.validate_prepare_gpf()
 
 	def _collect_receptors(self) -> List[str]:
 		"""Collect receptor files to process."""
@@ -265,41 +209,6 @@ class ActiveSiteDetection:
 		if kept == 0:
 			raise RuntimeError(f"No ATOM/HETATM records found in {input_pdbqt}")
 
-	def _run_fpocket(self, receptor_file: str) -> str:
-		"""Run fpocket for one receptor and return pocket1 file path."""
-		receptor_name = find_compound_name(receptor_file)
-
-		with tempfile.TemporaryDirectory(prefix=f"fpocket_{receptor_name}_") as tmpdir:
-			pdb_input = os.path.join(tmpdir, f"{receptor_name}.pdb")
-			self._strip_pdbqt_to_pdb(receptor_file, pdb_input)
-
-			cmd = [self.fpocket_path, "-f", pdb_input]
-			result = subprocess.run(
-				cmd,
-				capture_output=True,
-				text=True,
-				cwd=tmpdir,
-			)
-
-			if result.returncode != 0:
-				raise RuntimeError(
-					f"fpocket failed for {receptor_name}: {result.stderr.strip()}"
-				)
-
-			fpocket_out = os.path.join(tmpdir, f"{receptor_name}_out")
-			pocket1 = os.path.join(fpocket_out, "pockets", "pocket1_atm.pdb")
-			if not os.path.isfile(pocket1):
-				raise RuntimeError(
-					f"fpocket output missing pocket1_atm.pdb for {receptor_name}"
-				)
-
-			output_pocket = create_out_file(
-				self.pocket_folder,
-				f"{receptor_name}_pocket_atm1.pdb",
-			)
-			shutil.copy2(pocket1, output_pocket)
-			return output_pocket
-
 	@staticmethod
 	def _parse_atom_xyz(line: str) -> Tuple[float, float, float]:
 		"""Parse atom coordinates from a PDB atom line using fixed columns."""
@@ -373,46 +282,14 @@ class ActiveSiteDetection:
 		npts: Tuple[int, int, int],
 		output_gpf: str,
 	) -> None:
-		"""Generate GPF file with MGLTools prepare_gpf4.py."""
-		receptor_file = os.path.abspath(receptor_file)
-		ligand_file = os.path.abspath(ligand_file)
-		output_gpf = os.path.abspath(output_gpf)
-		center_str = f"{center[0]:.3f},{center[1]:.3f},{center[2]:.3f}"
-		npts_str = f"{npts[0]},{npts[1]},{npts[2]}"
-
-		cmd = [
-			self.mgltools_python,
-			self.prepare_gpf_script,
-			"-l",
-			ligand_file,
-			"-r",
-			receptor_file,
-			"-o",
-			output_gpf,
-			"-p",
-			"ligand_types=HD,A,C,OA,NA,N,SA,S,Cl,F,Br,I,P",
-			"-p",
-			f"npts={npts_str}",
-			"-p",
-			f"gridcenter={center_str}",
-		]
-
-		result = subprocess.run(
-			cmd,
-			capture_output=True,
-			text=True,
-			cwd=os.path.dirname(output_gpf),
-			env=self._get_mgltools_env(),
+		"""Generate GPF file using AutoDockTools adapter."""
+		self.autodocktools.prepare_gpf(
+			receptor_file=receptor_file,
+			ligand_file=ligand_file,
+			output_gpf=output_gpf,
+			center=center,
+			npts=npts,
 		)
-
-		if result.returncode != 0:
-			raise RuntimeError(
-				f"prepare_gpf4.py failed for {find_compound_name(receptor_file)}: "
-				f"{result.stderr.strip()}"
-			)
-
-		if not os.path.isfile(output_gpf) or os.path.getsize(output_gpf) == 0:
-			raise RuntimeError(f"GPF output missing or empty: {output_gpf}")
 
 	def _write_dimensions_report(self, rows: List[Dict[str, Any]], timestamp: str) -> str:
 		"""Write computed center/size report for all processed receptors."""
@@ -500,7 +377,7 @@ class ActiveSiteDetection:
 				"size": None,
 			}
 		else:
-			pocket_file = self._run_fpocket(receptor_file)
+			pocket_file = self.fpocket.detect_pocket(receptor_file, self.pocket_folder)
 			box_data = self._calculate_box(pocket_file)
 			npts = self._calculate_npts(box_data["size"])
 

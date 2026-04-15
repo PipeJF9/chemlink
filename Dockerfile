@@ -152,4 +152,12 @@ RUN python3.12 -m pip install --no-cache-dir \
     openbabel-wheel
 
 WORKDIR /app/chemlink
+
+# Make `chemlink` available from ~/.local/bin inside the container
+RUN mkdir -p /root/.local/bin \
+    && ln -sf /app/chemlink/chemlink /root/.local/bin/chemlink \
+    && echo 'export PATH="$HOME/.local/bin:$PATH"' >> /root/.bashrc
+
+ENV PATH="/root/.local/bin:${PATH}"
+
 CMD ["/bin/bash"]
