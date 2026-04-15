@@ -140,6 +140,30 @@ RUN git clone https://github.com/ccsb-scripps/AutoDock-GPU.git /tmp/autodock-gpu
     chmod +x /usr/local/bin/autodock-gpu && \
     rm -rf /tmp/autodock-gpu
 
+# CMake >= 3.28 requerido por GROMACS 2025.x
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.29.6-linux-x86_64.sh \
+      -O /tmp/cmake-install.sh \
+    && chmod +x /tmp/cmake-install.sh \
+    && /tmp/cmake-install.sh --skip-license --prefix=/usr/local \
+    && rm /tmp/cmake-install.sh
+
+# GROMACS 2025.4 - Multi-GPU para clúster heterogéneo con CUDA 13
+RUN wget -q https://ftp.gromacs.org/gromacs/gromacs-2025.4.tar.gz -O /tmp/gromacs.tar.gz \
+     && cd /tmp && tar xzf gromacs.tar.gz \
+     && cd gromacs-2025.4 && mkdir build && cd build \
+     && cmake .. \
+        -DGMX_BUILD_OWN_FFTW=ON \
+        -DREGRESSIONTEST_DOWNLOAD=OFF \
+        -DGMX_GPU=CUDA \
+        -DGMX_MPI=ON \
+        -DGMX_SIMD=AVX2_256 \
+        -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DGMX_CUDA_TARGET_SM="75;80;86;89;90;100;120" \
+        -DGMX_CUDA_TARGET_COMPUTE="90" \
+     && make -j$(nproc) && make install \
+     && rm -rf /tmp/gromacs*   
+
 # Configuración de Python
 RUN python3.12 -m ensurepip --upgrade \
     && python3.12 -m pip install --upgrade pip setuptools wheel \
