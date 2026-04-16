@@ -13,8 +13,12 @@ set -euo pipefail
 
 INPUT_DIR="${INPUT_DIR:-data/input/ligands}"
 OUTPUT_DIR="${OUTPUT_DIR:-data/input}"
+REPO_DIR="${REPO_DIR:-/nfs/chemlink/chemlink}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 N_WORKERS="${N_WORKERS:-${SLURM_CPUS_PER_TASK:-1}}"
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-}"
+CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-docker}"
+CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT:-/nfs/chemlink}"
 
 mkdir -p logs
 
@@ -24,9 +28,32 @@ echo "[$(date)] Input: ${INPUT_DIR}"
 echo "[$(date)] Output: ${OUTPUT_DIR}"
 echo "[$(date)] Local workers: ${N_WORKERS}"
 
-srun "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
-  "${INPUT_DIR}" \
-  "${OUTPUT_DIR}" \
-  "${N_WORKERS}"
+cd "${REPO_DIR}"
+
+if [[ -n "${CONTAINER_IMAGE}" ]]; then
+  if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
+    srun "${CONTAINER_RUNTIME}" exec \
+      --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
+      "${CONTAINER_IMAGE}" \
+      "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
+      "${INPUT_DIR}" \
+      "${OUTPUT_DIR}" \
+      "${N_WORKERS}"
+  else
+    srun "${CONTAINER_RUNTIME}" run --rm \
+      -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
+      -w "${REPO_DIR}" \
+      "${CONTAINER_IMAGE}" \
+      "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
+      "${INPUT_DIR}" \
+      "${OUTPUT_DIR}" \
+      "${N_WORKERS}"
+  fi
+else
+  srun "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
+    "${INPUT_DIR}" \
+    "${OUTPUT_DIR}" \
+    "${N_WORKERS}"
+fi
 
 echo "[$(date)] Task completed"

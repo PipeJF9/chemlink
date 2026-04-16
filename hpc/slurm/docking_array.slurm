@@ -11,12 +11,15 @@
 
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/nfs/chemlink/repo}"
+REPO_DIR="${REPO_DIR:-/nfs/chemlink/chemlink}"
 RUN_DIR="${RUN_DIR:-/nfs/chemlink/runs/test_run}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 WORKERS="${WORKERS:-1}"
 AUTOGRID_EXECUTABLE="${AUTOGRID_EXECUTABLE:-/usr/local/bin/autogrid4}"
 AUTODOCK_GPU_EXECUTABLE="${AUTODOCK_GPU_EXECUTABLE:-/usr/local/bin/autodock-gpu}"
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-}"
+CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-docker}"
+CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT:-/nfs/chemlink}"
 
 PREPARED_RECEPTORS_DIR="${PREPARED_RECEPTORS_DIR:-${RUN_DIR}/output/prepared_receptors_pdbqt}"
 BATCH_ROOT="${RUN_DIR}/ligand_batches"
@@ -44,12 +47,39 @@ echo "[$(date)] Receptors: ${PREPARED_RECEPTORS_DIR}"
 echo "[$(date)] Output: ${TASK_OUT_DIR}"
 
 cd "${REPO_DIR}"
-"${PYTHON_BIN}" cli/main.py docking run \
-  "${PREPARED_RECEPTORS_DIR}" \
-  "${BATCH_DIR}" \
-  "${TASK_OUT_DIR}" \
-  --autogrid-executable "${AUTOGRID_EXECUTABLE}" \
-  --autodock-gpu-executable "${AUTODOCK_GPU_EXECUTABLE}" \
-  --workers "${WORKERS}"
+if [[ -n "${CONTAINER_IMAGE}" ]]; then
+  if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
+    srun "${CONTAINER_RUNTIME}" exec --nv \
+      --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
+      "${CONTAINER_IMAGE}" \
+      "${PYTHON_BIN}" cli/main.py docking run \
+      "${PREPARED_RECEPTORS_DIR}" \
+      "${BATCH_DIR}" \
+      "${TASK_OUT_DIR}" \
+      --autogrid-executable "${AUTOGRID_EXECUTABLE}" \
+      --autodock-gpu-executable "${AUTODOCK_GPU_EXECUTABLE}" \
+      --workers "${WORKERS}"
+  else
+    srun "${CONTAINER_RUNTIME}" run --rm --gpus all \
+      -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
+      -w "${REPO_DIR}" \
+      "${CONTAINER_IMAGE}" \
+      "${PYTHON_BIN}" cli/main.py docking run \
+      "${PREPARED_RECEPTORS_DIR}" \
+      "${BATCH_DIR}" \
+      "${TASK_OUT_DIR}" \
+      --autogrid-executable "${AUTOGRID_EXECUTABLE}" \
+      --autodock-gpu-executable "${AUTODOCK_GPU_EXECUTABLE}" \
+      --workers "${WORKERS}"
+  fi
+else
+  "${PYTHON_BIN}" cli/main.py docking run \
+    "${PREPARED_RECEPTORS_DIR}" \
+    "${BATCH_DIR}" \
+    "${TASK_OUT_DIR}" \
+    --autogrid-executable "${AUTOGRID_EXECUTABLE}" \
+    --autodock-gpu-executable "${AUTODOCK_GPU_EXECUTABLE}" \
+    --workers "${WORKERS}"
+fi
 
 echo "[$(date)] Docking task ${SLURM_ARRAY_TASK_ID} completed"

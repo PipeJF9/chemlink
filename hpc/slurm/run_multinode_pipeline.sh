@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/nfs/chemlink/repo}"
+REPO_DIR="${REPO_DIR:-/nfs/chemlink/chemlink}"
 RUN_ID="${RUN_ID:-run_$(date +%Y%m%d_%H%M%S)}"
 RUN_DIR="${RUN_DIR:-/nfs/chemlink/runs/${RUN_ID}}"
 
@@ -24,6 +24,9 @@ MAX_GPU_CONCURRENCY="${MAX_GPU_CONCURRENCY:-6}"
 DOCKING_WORKERS="${DOCKING_WORKERS:-1}"
 AUTOGRID_EXECUTABLE="${AUTOGRID_EXECUTABLE:-/usr/local/bin/autogrid4}"
 AUTODOCK_GPU_EXECUTABLE="${AUTODOCK_GPU_EXECUTABLE:-/usr/local/bin/autodock-gpu}"
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-}"
+CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-docker}"
+CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT:-/nfs/chemlink}"
 
 mkdir -p "${RUN_DIR}" "${OUTPUT_DIR}" "${LOG_DIR}"
 cd "${REPO_DIR}"
@@ -50,27 +53,40 @@ echo "Total docking batches: ${total_batches}"
 echo "Docking array: ${array_expr}"
 
 jid_receptor=$(INPUT_DIR="${INPUT_RECEPTORS_DIR}" \
+  REPO_DIR="${REPO_DIR}" \
   OUTPUT_DIR="${OUTPUT_DIR}" \
   MGLTOOLS_PATH="${MGLTOOLS_PATH}" \
   PYTHON_BIN="${PYTHON_BIN}" \
   N_WORKERS="${RECEPTOR_WORKERS}" \
+  CONTAINER_IMAGE="${CONTAINER_IMAGE}" \
+  CONTAINER_RUNTIME="${CONTAINER_RUNTIME}" \
+  CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT}" \
   sbatch --parsable --array="${PREP_ARRAY_RANGE}" hpc/slurm/receptor_preparation_array.slurm)
 
 jid_ligand=$(INPUT_DIR="${INPUT_LIGANDS_DIR}" \
+  REPO_DIR="${REPO_DIR}" \
   OUTPUT_DIR="${OUTPUT_DIR}" \
   PYTHON_BIN="${PYTHON_BIN}" \
   N_WORKERS="${LIGAND_WORKERS}" \
+  CONTAINER_IMAGE="${CONTAINER_IMAGE}" \
+  CONTAINER_RUNTIME="${CONTAINER_RUNTIME}" \
+  CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT}" \
   sbatch --parsable --array="${PREP_ARRAY_RANGE}" hpc/slurm/ligand_preparation_array.slurm)
 
-jid_active=$(sbatch --parsable \
+jid_active=$(REPO_DIR="${REPO_DIR}" \
+  OUTPUT_DIR="${OUTPUT_DIR}" \
+  MGLTOOLS_PATH="${MGLTOOLS_PATH}" \
+  FPOCKET_PATH="${FPOCKET_PATH}" \
+  ACTIVE_SITE_WORKERS="${ACTIVE_SITE_WORKERS}" \
+  PYTHON_BIN="${PYTHON_BIN}" \
+  CONTAINER_IMAGE="${CONTAINER_IMAGE}" \
+  CONTAINER_RUNTIME="${CONTAINER_RUNTIME}" \
+  CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT}" \
+  sbatch --parsable \
   --dependency="afterok:${jid_receptor}:${jid_ligand}" \
-  --job-name=chemlink_active_site \
   --output="${LOG_DIR}/active_site_%j.out" \
   --error="${LOG_DIR}/active_site_%j.err" \
-  --cpus-per-task="${ACTIVE_SITE_WORKERS}" \
-  --mem=8G \
-  --time=04:00:00 \
-  --wrap="cd ${REPO_DIR} && ${PYTHON_BIN} cli/main.py active-site ${OUTPUT_DIR}/prepared_receptors_pdbqt ${OUTPUT_DIR}/prepared_ligands_pdbqt ${OUTPUT_DIR} --mgltools-path ${MGLTOOLS_PATH} --fpocket-path ${FPOCKET_PATH} --workers ${ACTIVE_SITE_WORKERS}")
+  hpc/slurm/active_site.slurm)
 
 jid_batch=$(RUN_DIR="${RUN_DIR}" \
   PREPARED_LIGANDS_DIR="${OUTPUT_DIR}/prepared_ligands_pdbqt" \
@@ -88,6 +104,9 @@ jid_docking=$(REPO_DIR="${REPO_DIR}" \
   PREPARED_RECEPTORS_DIR="${OUTPUT_DIR}/prepared_receptors_pdbqt" \
   AUTOGRID_EXECUTABLE="${AUTOGRID_EXECUTABLE}" \
   AUTODOCK_GPU_EXECUTABLE="${AUTODOCK_GPU_EXECUTABLE}" \
+  CONTAINER_IMAGE="${CONTAINER_IMAGE}" \
+  CONTAINER_RUNTIME="${CONTAINER_RUNTIME}" \
+  CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT}" \
   sbatch --parsable \
   --dependency="afterok:${jid_active}:${jid_batch}" \
   --array="${array_expr}" \
@@ -102,15 +121,17 @@ jid_merge=$(RUN_DIR="${RUN_DIR}" \
   --error="${LOG_DIR}/merge_%j.err" \
   hpc/slurm/merge_docking_results.slurm)
 
-jid_analysis=$(sbatch --parsable \
+jid_analysis=$(REPO_DIR="${REPO_DIR}" \
+  ANALYSIS_OUTPUT_DIR="${RUN_DIR}/merged_output" \
+  PYTHON_BIN="${PYTHON_BIN}" \
+  CONTAINER_IMAGE="${CONTAINER_IMAGE}" \
+  CONTAINER_RUNTIME="${CONTAINER_RUNTIME}" \
+  CONTAINER_MOUNT_ROOT="${CONTAINER_MOUNT_ROOT}" \
+  sbatch --parsable \
   --dependency="afterok:${jid_merge}" \
-  --job-name=chemlink_analysis \
   --output="${LOG_DIR}/analysis_%j.out" \
   --error="${LOG_DIR}/analysis_%j.err" \
-  --cpus-per-task=2 \
-  --mem=4G \
-  --time=01:00:00 \
-  --wrap="cd ${REPO_DIR} && ${PYTHON_BIN} cli/main.py docking analyze ${RUN_DIR}/merged_output")
+  hpc/slurm/analysis.slurm)
 
 echo
 echo "Submitted jobs:"
