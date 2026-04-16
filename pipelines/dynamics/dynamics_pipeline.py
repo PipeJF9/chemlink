@@ -1,6 +1,6 @@
 import os
 from .utils import check_gmx_installation
-from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep
+from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -49,6 +49,11 @@ class DynamicsPipeline:
             print("\n[Paso 6/6] Ejecutando simulación de producción...")
             prod = ProductionStep(self.config, self.gmx_bin)
             prod.run()
+
+            # 7. Ejecutar Paso 7: Post-procesamiento
+            print("\n[Paso 7/7] Post-procesando resultados...")
+            post_proc = PostProcessingStep(self.config, self.gmx_bin)
+            post_proc.run()
 
             print("\n[✓] ¡Proceso de Dinámica finalizado con éxito!")
         except Exception as e:

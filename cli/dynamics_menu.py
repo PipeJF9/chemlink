@@ -34,7 +34,7 @@ def run_dynamics_menu():
     pdb_path = f"data/input/dynamics/{pdb_file}.pdb"
     if not os.path.exists(pdb_path):
         print(f"(!) Error: No se encuentra {pdb_path}")
-        return #sale del menú si el archivo no existe
+        return #sale si el archivo no existe
 
     num_threads = 8 
 
@@ -51,6 +51,9 @@ def run_dynamics_menu():
     print(f"\n[ChemLink] Iniciando pipeline para {ns_time} ns...")
     pipeline = DynamicsPipeline(config)
     pipeline.execute()
+
+    print("\n[✓] Proceso completado con éxito.")
+    input("\nPresione Enter para volver al menú principal...")
 
 if __name__ == "__main__":
     run_dynamics_menu()

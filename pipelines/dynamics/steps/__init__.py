@@ -4,6 +4,7 @@ from .ions import IonsStep
 from .energy_min import EnergyMinStep
 from .equilibration import EquilibrationStep
 from .production import ProductionStep
+from .post_processing import PostProcessingStep
 
 __all__ = [
     "TopologyStep",
@@ -11,5 +12,6 @@ __all__ = [
     "IonsStep",
     "EnergyMinStep",
     "EquilibrationStep",
-    "ProductionStep"
+    "ProductionStep",
+    "PostProcessingStep"
 ]

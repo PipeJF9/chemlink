@@ -4,9 +4,10 @@ from cli.dynamics_menu import run_dynamics_menu
 
 def main():
     while True:
-        # Limpiar consola (opcional, puedes comentarlo si prefieres ver el historial)
-        os.system('cls' if os.name == 'nt' else 'clear')
-        
+        # Limpiar consola
+        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.flush()
+
         print("--- CHEMLINK ---")
         print("1) Dinámica Molecular")
         print("2) Salir")
