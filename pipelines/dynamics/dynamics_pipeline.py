@@ -1,4 +1,6 @@
 import os
+
+from pipelines.dynamics.steps.ligand_topology import LigandTopologyStep
 from .utils import check_gmx_installation
 from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep
 
@@ -24,6 +26,16 @@ class DynamicsPipeline:
             print("\n[Paso 1/6] Generando Topología...")
             topo = TopologyStep(self.config, self.gmx_bin)
             topo.run()
+
+            # Lógica de ligando pequeño Opción 2
+            if self.config["sim_type"] == "2":
+                ligand_step = LigandTopologyStep(self.config, self.gmx_bin)
+                ligand_step.run()
+                
+                self.config["current_gro"] = "complex.gro"
+            else:
+                self.config["current_gro"] = "processed.gro"
+            # ---------------------------------
 
             # 2. Ejecutar Paso 2: Solvatación
             print("\n[Paso 2/6] Solvatando sistema...")
