@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import subprocess
 
 def calculate_nsteps(ns_time, dt=0.002): # Convierte nanosegundos a pasos de GROMACS.
     # 1 ns = 1000 ps. nsteps = (ns * 1000) / dt
@@ -50,3 +51,15 @@ def check_gmx_installation(): # Verifica si gmx o gmx_mpi están disponibles en 
         "(!) Error: No se encontró GROMACS (gmx o gmx_mpi) instalado en el PATH del sistema.\n"
         "Asegúrese de que GROMACS esté instalado y cargado correctamente."
     )
+
+def convert_pdbqt_to_pdb(input_path, output_path):
+    # -h: añade hidrógenos según pH 7.0
+    # --error 0: silencia warnings no críticos
+    obabel_cmd = ["obabel", input_path, "-O", output_path, "-h", "--error", "0"]
+    
+    try:
+        result = subprocess.run(obabel_cmd, check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"(!) Error en OpenBabel: {e.stderr}")
+        return False

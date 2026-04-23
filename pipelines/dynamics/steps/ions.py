@@ -68,9 +68,10 @@ class IonsStep:
             print("   -> Neutralizando carga (reemplazando agua por NA/CL)...")
             process = subprocess.Popen(genion_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             # "13" selecciona el grupo SOL para reemplazar
-            stdout, stderr = process.communicate(input="13\n")
+            stdout, stderr = process.communicate(input="SOL\n")
             
             if process.returncode != 0:
+                print(stderr)
                 raise subprocess.CalledProcessError(process.returncode, genion_cmd, stderr)
 
             print(f"[✓] Sistema neutralizado: {os.path.basename(self.ionized_gro)}")

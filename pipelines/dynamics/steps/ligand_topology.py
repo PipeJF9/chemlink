@@ -1,6 +1,7 @@
 import subprocess
 import os
 import shutil
+from pipelines.dynamics.utils import convert_pdbqt_to_pdb
 
 class LigandTopologyStep:
     def __init__(self, config, gmx_bin):
@@ -20,11 +21,20 @@ class LigandTopologyStep:
     def run(self):
         print(f"\n[*] Paso 1.5: Procesamiento de Ligando Pequeño (Carga: {self.charge})")
         
-        # 1. Crear directorio temporal y copiar el PDB (como en tu Bash)
+        # 1. Crear directorio temporal y copiar el PDB
         if not os.path.exists(self.acpype_workdir):
             os.makedirs(self.acpype_workdir)
         
-        shutil.copy(self.ligand_pdb, os.path.join(self.acpype_workdir, "ligand.pdb"))
+        internal_pdb = os.path.join(self.acpype_workdir, "ligand.pdb")
+        
+        if self.ligand_pdb.lower().endswith(".pdbqt"):
+            print("   -> Detectado PDBQT. Convirtiendo a PDB con OpenBabel...")
+            success = convert_pdbqt_to_pdb(self.ligand_pdb, internal_pdb)
+            if not success:
+                raise RuntimeError("Falló la conversión del ligando a PDB.")
+        else:
+            shutil.copy(self.ligand_pdb, internal_pdb)
+
 
         # 2. Ejecutar ACPYPE con gaff2 y bcc
         acpype_cmd = [
@@ -56,7 +66,6 @@ class LigandTopologyStep:
         acpype_itp = os.path.join(acpype_out_folder, "LIG_GMX.itp")
         
         # 4. Limpiar ITP y Fusionar Estructuras
-        # (Esto crea 'ligand.itp' y 'complex.gro' en el work_dir principal)
         self._clean_ligand_itp(acpype_itp)
         self._merge_gro(self.protein_gro, acpype_gro)
         

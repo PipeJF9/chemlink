@@ -18,7 +18,7 @@ def run_dynamics_menu():
     sim_type = input("\n➤ Ingrese una opción (1-7): ")
     if sim_type == "7":
         return
-    elif sim_type != "1":
+    elif sim_type != "1" and sim_type != "2":
         return
     
     # 2. PEDIR TIEMPO DE SIMULACIÓN
@@ -30,16 +30,9 @@ def run_dynamics_menu():
         except ValueError:
             print("(!) Por favor, ingrese un número válido.")
 
-    # 3. PEDIR PDB DE ENTRADA
-    pdb_file = input("➤ Nombre del PDB (sin extensión): ")
-    pdb_path = f"data/input/dynamics/{pdb_file}.pdb"
-    if not os.path.exists(pdb_path):
-        print(f"(!) Error: No se encuentra {pdb_path}")
-        return #sale si el archivo no existe
+    num_threads = 10 
 
-    num_threads = 12 
-
-    # 4. CONFIGURAR EL PIPELINE
+    # 3. CONFIGURAR EL PIPELINE
     config = {
         "sim_type": sim_type,
         "ns_time": ns_time,
@@ -47,11 +40,12 @@ def run_dynamics_menu():
         "work_dir": "data/output/dynamics"
     }
 
+    # 4. PEDIR ARCHIVOS DE ENTRADA
     if sim_type == "2":
         prot_file = input("➤ PDB de la PROTEÍNA (sin extensión): ")
         lig_file = input("➤ PDB del LIGANDO (sin extensión): ")
         config["pdb_input"] = f"data/input/dynamics/{prot_file}.pdb"
-        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}.pdb"
+        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}"
         config["ligand_charge"] = int(input("➤ Carga neta del ligando (ej: 0): "))
     else:
         pdb_file = input("➤ Nombre del PDB (sin extensión): ")
