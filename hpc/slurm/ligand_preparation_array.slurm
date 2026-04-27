@@ -32,28 +32,29 @@ cd "${REPO_DIR}"
 
 if [[ -n "${CONTAINER_IMAGE}" ]]; then
   if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
-    srun "${CONTAINER_RUNTIME}" exec \
+    "${CONTAINER_RUNTIME}" exec \
       --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       "${CONTAINER_IMAGE}" \
-      "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
+      "${PYTHON_BIN}" cli/main.py ligand-preparation \
       "${INPUT_DIR}" \
       "${OUTPUT_DIR}" \
-      "${N_WORKERS}"
+      --workers "${N_WORKERS}"
   else
-    srun "${CONTAINER_RUNTIME}" run --rm \
+    "${CONTAINER_RUNTIME}" run --rm \
+      --user "$(id -u):$(id -g)" \
       -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       -w "${REPO_DIR}" \
       "${CONTAINER_IMAGE}" \
-      "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
+      "${PYTHON_BIN}" cli/main.py ligand-preparation \
       "${INPUT_DIR}" \
       "${OUTPUT_DIR}" \
-      "${N_WORKERS}"
+      --workers "${N_WORKERS}"
   fi
 else
-  srun "${PYTHON_BIN}" pipelines/docking/steps/ligand_preparation.py \
+  "${PYTHON_BIN}" cli/main.py ligand-preparation \
     "${INPUT_DIR}" \
     "${OUTPUT_DIR}" \
-    "${N_WORKERS}"
+    --workers "${N_WORKERS}"
 fi
 
 echo "[$(date)] Task completed"

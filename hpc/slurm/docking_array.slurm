@@ -7,7 +7,6 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=24:00:00
-#SBATCH --gres=gpu:1
 
 set -euo pipefail
 
@@ -35,7 +34,7 @@ if [[ ! -d "${BATCH_DIR}" ]]; then
   exit 0
 fi
 
-if ! find "${BATCH_DIR}" -maxdepth 1 -type f -name "*.pdbqt" | grep -q .; then
+if ! find "${BATCH_DIR}" -maxdepth 1 \( -type f -o -type l \) -name "*.pdbqt" | grep -q .; then
   echo "[$(date)] Empty batch dir ${BATCH_DIR}; skipping"
   exit 0
 fi
@@ -49,7 +48,7 @@ echo "[$(date)] Output: ${TASK_OUT_DIR}"
 cd "${REPO_DIR}"
 if [[ -n "${CONTAINER_IMAGE}" ]]; then
   if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
-    srun "${CONTAINER_RUNTIME}" exec --nv \
+    "${CONTAINER_RUNTIME}" exec --nv \
       --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       "${CONTAINER_IMAGE}" \
       "${PYTHON_BIN}" cli/main.py docking run \
@@ -60,7 +59,8 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
       --autodock-gpu-executable "${AUTODOCK_GPU_EXECUTABLE}" \
       --workers "${WORKERS}"
   else
-    srun "${CONTAINER_RUNTIME}" run --rm --gpus all \
+    "${CONTAINER_RUNTIME}" run --rm --gpus all \
+      --user "$(id -u):$(id -g)" \
       -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       -w "${REPO_DIR}" \
       "${CONTAINER_IMAGE}" \

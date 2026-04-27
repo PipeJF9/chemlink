@@ -29,7 +29,7 @@ cd "${REPO_DIR}"
 
 if [[ -n "${CONTAINER_IMAGE}" ]]; then
   if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
-    srun "${CONTAINER_RUNTIME}" exec \
+    "${CONTAINER_RUNTIME}" exec \
       --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       "${CONTAINER_IMAGE}" \
       "${PYTHON_BIN}" cli/main.py active-site \
@@ -40,7 +40,8 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
       --fpocket-path "${FPOCKET_PATH}" \
       --workers "${ACTIVE_SITE_WORKERS}"
   else
-    srun "${CONTAINER_RUNTIME}" run --rm \
+    "${CONTAINER_RUNTIME}" run --rm \
+      --user "$(id -u):$(id -g)" \
       -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       -w "${REPO_DIR}" \
       "${CONTAINER_IMAGE}" \
@@ -53,7 +54,7 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
       --workers "${ACTIVE_SITE_WORKERS}"
   fi
 else
-  srun "${PYTHON_BIN}" cli/main.py active-site \
+  "${PYTHON_BIN}" cli/main.py active-site \
     "${RECEPTOR_DIR}" \
     "${LIGAND_DIR}" \
     "${OUTPUT_DIR}" \

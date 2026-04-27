@@ -22,19 +22,20 @@ cd "${REPO_DIR}"
 
 if [[ -n "${CONTAINER_IMAGE}" ]]; then
   if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
-    srun "${CONTAINER_RUNTIME}" exec \
+    "${CONTAINER_RUNTIME}" exec \
       --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       "${CONTAINER_IMAGE}" \
       "${PYTHON_BIN}" cli/main.py docking analyze "${ANALYSIS_OUTPUT_DIR}"
   else
-    srun "${CONTAINER_RUNTIME}" run --rm \
+    "${CONTAINER_RUNTIME}" run --rm \
+      --user "$(id -u):$(id -g)" \
       -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       -w "${REPO_DIR}" \
       "${CONTAINER_IMAGE}" \
       "${PYTHON_BIN}" cli/main.py docking analyze "${ANALYSIS_OUTPUT_DIR}"
   fi
 else
-  srun "${PYTHON_BIN}" cli/main.py docking analyze "${ANALYSIS_OUTPUT_DIR}"
+  "${PYTHON_BIN}" cli/main.py docking analyze "${ANALYSIS_OUTPUT_DIR}"
 fi
 
 echo "[$(date)] Analysis completed"
