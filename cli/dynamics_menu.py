@@ -18,7 +18,7 @@ def run_dynamics_menu():
     sim_type = input("\n➤ Ingrese una opción (1-7): ")
     if sim_type == "7":
         return
-    elif sim_type != "1" and sim_type != "2":
+    elif sim_type != "1" and sim_type != "2" and sim_type != "5":
         return
     
     # 2. PEDIR TIEMPO DE SIMULACIÓN
@@ -47,6 +47,9 @@ def run_dynamics_menu():
         config["pdb_input"] = f"data/input/dynamics/{prot_file}.pdb"
         config["ligand_pdb"] = f"data/input/dynamics/{lig_file}"
         config["ligand_charge"] = int(input("➤ Carga neta del ligando (ej: 0): "))
+    elif sim_type == "5":
+        pdb_complex = input("➤ Nombre del PDB del COMPLEJO (sin extension): ")
+        config["pdb_input"] = f"data/input/dynamics/{pdb_complex}.pdb"
     else:
         pdb_file = input("➤ Nombre del PDB (sin extensión): ")
         config["pdb_input"] = f"data/input/dynamics/{pdb_file}.pdb"
