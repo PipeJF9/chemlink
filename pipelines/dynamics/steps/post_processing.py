@@ -11,7 +11,7 @@ class PostProcessingStep:
         #self.md_xtc = os.path.join(self.config["work_dir"], "md.xtc")
         
         # Archivos de salida
-        self.final_xtc = os.path.join(self.config["work_dir"], "md_1_center.xtc")
+        self.final_xtc = os.path.join(self.config["work_dir"], "md_center.xtc")
         self.rel_seg_dir = "trayectorias_segmentadas"
         self.segment_dir = os.path.join(self.config["work_dir"], self.rel_seg_dir)
         #self.final_pdb = os.path.join(self.config["work_dir"], "md.pdb")
@@ -25,7 +25,7 @@ class PostProcessingStep:
             self.gmx_bin, "trjconv",
             "-s", "md.tpr",
             "-f", "md.xtc",
-            "-o", "md_1_center.xtc",
+            "-o", "md_center.xtc",
             "-center",
             "-pbc", "mol",
             "-ur", "compact"
@@ -35,14 +35,14 @@ class PostProcessingStep:
         dump_pdb_cmd = [
             self.gmx_bin, "trjconv",
             "-s", "md.tpr",
-            "-f", "md_1_center.xtc",
-            "-o", "md_1.pdb",
+            "-f", "md_center.xtc",
+            "-o", "md.pdb",
             "-dump", str(sim_time_ps)
         ]
         # Comando para extraer primeros 100 ps (analisis rapido)
         cmd_100 = [
                     self.gmx_bin, "trjconv",
-                    "-s", "md.tpr", "-f", "md_1_center.xtc",
+                    "-s", "md.tpr", "-f", "md_center.xtc",
                     "-o", os.path.join(self.rel_seg_dir, "md_first_100ps.xtc"),
                     "-e", "100", "-tu", "ps"
                 ]
@@ -50,7 +50,7 @@ class PostProcessingStep:
         last_10_percent_time = sim_time_ps * 0.9
         cmd_last = [
                     self.gmx_bin, "trjconv",
-                    "-s", "md.tpr", "-f", "md_1_center.xtc",
+                    "-s", "md.tpr", "-f", "md_center.xtc",
                     "-o", os.path.join(self.rel_seg_dir, "md_last_10percent.xtc"),
                     "-b", str(last_10_percent_time), "-tu", "ps"
                 ]
@@ -68,14 +68,14 @@ class PostProcessingStep:
                 fallback_cmd = [
                     self.gmx_bin, "trjconv", 
                     "-s", "md.tpr", 
-                    "-f", "md_1_center.xtc",
-                    "-o", "md_1.pdb", 
+                    "-f", "md_center.xtc",
+                    "-o", "md.pdb", 
                     "-dump", "-1"]
                 subprocess.run(fallback_cmd, input="0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
             
 
             print(f"   -> Creando archivo de índice optimizado...")
-            pdb_path = os.path.join(self.config["work_dir"], "md_1.pdb")
+            pdb_path = os.path.join(self.config["work_dir"], "md.pdb")
             chains = self._detect_chains(pdb_path)
 
             if self.config.get("sim_type") == "2":
@@ -106,7 +106,7 @@ class PostProcessingStep:
                 print(f"      -> Guardando último 10% (desde {last_10_percent_time} ps)...")
                 subprocess.run(cmd_last, input="0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
 
-            print("[✓] Post-procesamiento finalizado. Archivos generados: md_1_center.xtc, md_1.pdb")
+            print("[✓] Post-procesamiento finalizado. Archivos generados: md_center.xtc, md.pdb")
 
         except subprocess.CalledProcessError as e:
             print(f"[X] Error en trjconv:\n{e.stderr}")
@@ -129,7 +129,8 @@ class PostProcessingStep:
         atoms_by_chain = {c: [] for c in chains}
         with open(pdb_file, 'r') as f:
             for line in f:
-                if line.startswith(("ATOM", "HETATM")):
+                # El .sh filtra por ATOM/HETATM y longitud >= 27
+                if line.startswith(("ATOM", "HETATM")) and len(line) >= 27:
                     try:
                         atom_num = line[6:11].strip()
                         chain = line[21].strip()
@@ -137,7 +138,7 @@ class PostProcessingStep:
                             atoms_by_chain[chain].append(atom_num)
                     except: continue
         
-        # Tomar las dos cadenas con más átomos
+        # Ordenar por tamaño como hace el .sh (sorted_chains)
         sorted_chains = sorted(atoms_by_chain.items(), key=lambda x: len(x[1]), reverse=True)
         c1_name, c1_atoms = sorted_chains[0]
         c2_name, c2_atoms = sorted_chains[1]

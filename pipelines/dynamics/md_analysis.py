@@ -1,4 +1,4 @@
-
+# VERIFICAR LO DE CORES
 import os
 import sys
 import numpy as np
@@ -16,11 +16,15 @@ COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
 
 class GromacsAnalyzer:
     
-    def __init__(self, results_dir: str, gmx_bin: str = "gmx"):
+    def __init__(self, results_dir: str, sim_type: str, gmx_bin: str = "gmx"):
         self.results_dir = Path(results_dir)
         self.gmx_bin = gmx_bin
+        self.sim_type = sim_type  # Guardamos el tipo de simulación
         
-        self.has_ligand = (self.results_dir / 'ligand.itp').exists()
+        # Flags booleanos para facilitar las condiciones en las gráficas
+        self.has_ligand = sim_type in ["2", "6"]
+        self.is_protein_only = sim_type == "1"
+        self.is_protein_protein = sim_type == "5"
         
         self.analysis_dirs = {
             'energia': self.results_dir / 'analisis_energia',
@@ -97,7 +101,7 @@ class GromacsAnalyzer:
         
         for sel, out in analyses:
             cmd = [self.gmx_bin, 'rms', '-s', str(self.results_dir / 'em.tpr'),
-                   '-f', str(self.results_dir / 'md_1_center.xtc'),
+                   '-f', str(self.results_dir / 'md_center.xtc'),
                    '-n', str(self.results_dir / 'index.ndx'),
                    '-tu', 'ns', '-o', str(self.analysis_dirs['rmsd'] / out)]
             self._run_gmx_command(cmd, sel)
@@ -107,7 +111,7 @@ class GromacsAnalyzer:
                             ('13\n13\n', 'rmsd_ligand_fit_self.xvg'),
                             ('1\n22\n', 'rmsd_complex.xvg')]:
                 cmd = [self.gmx_bin, 'rms', '-s', str(self.results_dir / 'em.tpr'),
-                       '-f', str(self.results_dir / 'md_1_center.xtc'),
+                       '-f', str(self.results_dir / 'md_center.xtc'),
                        '-n', str(self.results_dir / 'index.ndx'),
                        '-tu', 'ns', '-o', str(self.analysis_dirs['rmsd'] / out)]
                 self._run_gmx_command(cmd, sel)
@@ -120,8 +124,8 @@ class GromacsAnalyzer:
         print("="*80)
         
         for sel, out in [('3\n', 'rmsf_calpha'), ('4\n', 'rmsf_backbone'), ('1\n', 'rmsf_protein')]:
-            cmd = [self.gmx_bin, 'rmsf', '-s', str(self.results_dir / 'md_1.tpr'),
-                   '-f', str(self.results_dir / 'md_1_center.xtc'),
+            cmd = [self.gmx_bin, 'rmsf', '-s', str(self.results_dir / 'md.tpr'),
+                   '-f', str(self.results_dir / 'md_center.xtc'),
                    '-o', str(self.analysis_dirs['rmsf'] / f'{out}.xvg'),
                    '-n', str(self.results_dir / 'index.ndx'),
                    '-ox', str(self.analysis_dirs['rmsf'] / f'{out}_avg.pdb'),
@@ -130,8 +134,8 @@ class GromacsAnalyzer:
             self._run_gmx_command(cmd, sel)
         
         if self.has_ligand:
-            cmd = [self.gmx_bin, 'rmsf', '-s', str(self.results_dir / 'md_1.tpr'),
-                   '-f', str(self.results_dir / 'md_1_center.xtc'),
+            cmd = [self.gmx_bin, 'rmsf', '-s', str(self.results_dir / 'md.tpr'),
+                   '-f', str(self.results_dir / 'md_center.xtc'),
                    '-o', str(self.analysis_dirs['rmsf'] / 'rmsf_ligand.xvg'),
                    '-n', str(self.results_dir / 'index.ndx'),
                    '-ox', str(self.analysis_dirs['rmsf'] / 'rmsf_ligand_avg.pdb'),
@@ -147,8 +151,8 @@ class GromacsAnalyzer:
         
         for sel, out in [('1\n', 'gyrate_protein.xvg'), ('4\n', 'gyrate_backbone.xvg'), 
                         ('3\n', 'gyrate_calpha.xvg')]:
-            cmd = [self.gmx_bin, 'gyrate', '-f', str(self.results_dir / 'md_1_center.xtc'),
-                   '-s', str(self.results_dir / 'md_1.tpr'),
+            cmd = [self.gmx_bin, 'gyrate', '-f', str(self.results_dir / 'md_center.xtc'),
+                   '-s', str(self.results_dir / 'md.tpr'),
                    '-o', str(self.analysis_dirs['estructural'] / out),
                    '-n', str(self.results_dir / 'index.ndx')]
             self._run_gmx_command(cmd, sel)
@@ -160,8 +164,8 @@ class GromacsAnalyzer:
         print("PASO 11: Análisis de SASA")
         print("="*80)
         
-        cmd = [self.gmx_bin, 'sasa', '-f', str(self.results_dir / 'md_1_center.xtc'),
-               '-s', str(self.results_dir / 'md_1.tpr'),
+        cmd = [self.gmx_bin, 'sasa', '-f', str(self.results_dir / 'md_center.xtc'),
+               '-s', str(self.results_dir / 'md.tpr'),
                '-o', str(self.analysis_dirs['sasa'] / 'sasa_protein.xvg'),
                '-or', str(self.analysis_dirs['sasa'] / 'sasa_residue.xvg'),
                '-oa', str(self.analysis_dirs['sasa'] / 'sasa_atom.xvg'),
@@ -170,8 +174,8 @@ class GromacsAnalyzer:
         
         if self.has_ligand:
             for sel, out in [('13\n', 'sasa_ligand.xvg'), ('22\n', 'sasa_complex.xvg')]:
-                cmd = [self.gmx_bin, 'sasa', '-f', str(self.results_dir / 'md_1_center.xtc'),
-                       '-s', str(self.results_dir / 'md_1.tpr'),
+                cmd = [self.gmx_bin, 'sasa', '-f', str(self.results_dir / 'md_center.xtc'),
+                       '-s', str(self.results_dir / 'md.tpr'),
                        '-o', str(self.analysis_dirs['sasa'] / out),
                        '-n', str(self.results_dir / 'index.ndx')]
                 self._run_gmx_command(cmd, sel)
@@ -186,15 +190,15 @@ class GromacsAnalyzer:
         
         hbonds_dir = self.analysis_dirs['hbonds']
         
-        cmd = [self.gmx_bin, 'hbond', '-f', str(self.results_dir / 'md_1_center.xtc'),
-               '-s', str(self.results_dir / 'md_1.tpr'),
+        cmd = [self.gmx_bin, 'hbond', '-f', str(self.results_dir / 'md_center.xtc'),
+               '-s', str(self.results_dir / 'md.tpr'),
                '-num', str(hbonds_dir / 'hbond_protein_intra.xvg'),
                '-n', str(self.results_dir / 'index.ndx')]
         self._run_gmx_command(cmd, '1\n1\n')
         
         if self.has_ligand:
-            cmd = [self.gmx_bin, 'hbond', '-f', str(self.results_dir / 'md_1_center.xtc'),
-                   '-s', str(self.results_dir / 'md_1.tpr'),
+            cmd = [self.gmx_bin, 'hbond', '-f', str(self.results_dir / 'md_center.xtc'),
+                   '-s', str(self.results_dir / 'md.tpr'),
                    '-num', str(hbonds_dir / 'hbond_prot_lig.xvg'),
                    '-dist', str(hbonds_dir / 'hbond_prot_lig_dist.xvg'),
                    '-ang', str(hbonds_dir / 'hbond_prot_lig_angle.xvg'),
@@ -396,6 +400,9 @@ class GromacsAnalyzer:
             files.extend([('rmsd_ligand_fit_protein.xvg', 'Ligando (fit proteína)', COLORS[3]),
                          ('rmsd_complex.xvg', 'Complejo', COLORS[4])])
         
+        if self.is_protein_protein:
+            files.append(('rmsd_other_fit_protein.xvg', 'Cadena B', COLORS[4]))
+
         for filename, label, color in files:
             filepath = self.analysis_dirs['rmsd'] / filename
             if filepath.exists():
@@ -625,13 +632,13 @@ class GromacsAnalyzer:
     def detect_protein_protein(self) -> (bool, list):
         """Detecta si la simulación es probablemente proteína-proteína.
 
-        Devuelve (True, [chain_ids]) si encuentra >1 cadenas en `md_1.pdb`
+        Devuelve (True, [chain_ids]) si encuentra >1 cadenas en `md.pdb`
         y no hay ligando. En caso contrario devuelve (False, []).
         """
         if self.has_ligand:
             return False, []
 
-        pdb_file = self.results_dir / 'md_1.pdb'
+        pdb_file = self.results_dir / 'md.pdb'
         if not pdb_file.exists():
             return False, []
 
@@ -735,7 +742,7 @@ class GromacsAnalyzer:
             print(f"    python3 dccm_analysis.py -d {self.results_dir} -g {self.gmx_bin}")
             return
         
-        required_files = ['md_1_center.xtc', 'md_1.tpr', 'index.ndx']
+        required_files = ['md_center.xtc', 'md.tpr', 'index.ndx']
         missing_files = []
         for filename in required_files:
             if not (self.results_dir / filename).exists():
@@ -825,7 +832,7 @@ class GromacsAnalyzer:
             print(f"    python3 mmpbsa_analysis.py -d {self.results_dir}")
             return
         
-        required_files = ['md_1_center.xtc', 'md_1.tpr', 'index.ndx']
+        required_files = ['md_center.xtc', 'md.tpr', 'index.ndx']
         missing_files = []
         for filename in required_files:
             if not (self.results_dir / filename).exists():
@@ -910,7 +917,7 @@ class GromacsAnalyzer:
             print(f"    python3 mmpbsa_analysis.py -d {self.results_dir}")
             return
         
-        required_files = ['md_1_center.xtc', 'md_1.tpr', 'index.ndx']
+        required_files = ['md_center.xtc', 'md.tpr', 'index.ndx']
         missing_files = []
         for filename in required_files:
             if not (self.results_dir / filename).exists():

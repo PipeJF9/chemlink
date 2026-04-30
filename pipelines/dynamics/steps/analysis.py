@@ -54,11 +54,11 @@ class AnalysisStep:
         print("\n" + "="*65)
         print("             PROCESO DE ANÁLISIS FINALIZADO")
         print("="*65)
-
+    
     def _run_general_analysis(self):
         try:
             print(f"[*] Iniciando GromacsAnalyzer")
-            analyzer = GromacsAnalyzer (results_dir=self.work_dir, gmx_bin=self.gmx_bin)
+            analyzer = GromacsAnalyzer (results_dir=self.work_dir, sim_type= str(self.config.get("sim_type")), gmx_bin=self.gmx_bin)
             # se guarden en 'results' y no ensucien el 'work_dir'
             for key in analyzer.analysis_dirs:
                 analyzer.analysis_dirs[key] = os.path.join(self.results_dir, os.path.basename(analyzer.analysis_dirs[key]))
@@ -122,7 +122,7 @@ ARCHIVOS PRINCIPALES:
    Gráficas:          graficas/dashboard_resumen.png
    Análisis:          RESUMEN_ANALISIS.txt
    Trayectoria:       md_center.xtc
-   Estructura final:  md_final.pdb
+   Estructura final:  md.pdb
    Topología:         topol.top
    Índices:           index.ndx
 
@@ -131,12 +131,12 @@ PRÓXIMOS PASOS:
   1. Revisar dashboard de gráficas en la carpeta 'graficas/'
   2. Leer el reporte estadístico RESUMEN_ANALISIS.txt
   3. Verificar convergencia en graficas/rmsd_tiempo.png
-  4. Visualizar trayectoria con: vmd md_final.pdb md_center.xtc
+  4. Visualizar trayectoria con: vmd md.pdb md_center.xtc
 
 COMANDOS ÚTILES:
 ----------------
   # Visualizar en VMD
-  vmd md_final.pdb md_center.xtc
+  vmd md.pdb md_center.xtc
   
   # Regenerar gráficas (solo si es necesario)
   python3 {os.path.basename(self.analysis_script)} -d . --plot-only
