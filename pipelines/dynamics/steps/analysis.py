@@ -1,3 +1,4 @@
+from pathlib import Path
 import subprocess
 import os
 import datetime
@@ -8,8 +9,8 @@ class AnalysisStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
-        self.work_dir = self.config["work_dir"]
-        self.results_dir = os.path.join(self.work_dir, "results")
+        self.results_dir = config["work_dir"]
+
         # Rutas de scripts de análisis
         self.base_path = "pipeline/dynamics"
         self.mmpbsa_pp_ligand = os.path.join(self.base_path, "run_mmpbsa_for_pp_with_ligand.py")
@@ -21,23 +22,19 @@ class AnalysisStep:
         print("      EJECUTANDO ANÁLISIS COMPLETO AUTOMATIZADO")
         print("="*65)
 
-        if not os.path.exists(self.results_dir):
-            os.makedirs(self.results_dir)
-
         # 1. ANÁLISIS ESTRUCTURAL GENERAL
         # Este script genera RMSD, RMSF, Radios de Giro, SASA, etc.
         self._run_general_analysis()
 
-
         # 2. ANÁLISIS DE ENERGÍA DE BINDING (MM-PBSA)
-        sim_type = str(self.config.get("sim_type", "1"))
+        sim_type = self.config["sim_type"]
         if sim_type == "2":
             print("\n[*] Configuración: Proteína + Ligando")
             print("    -> Iniciando MM-PBSA para molécula pequeña...")
             #self._execute_mmpbsa(self.mmpbsa_ligand, "Proteína-Ligando")
 
         elif sim_type == "5" or sim_type == "3":
-            print("\n[*] Configuración: Complejo de Proteína + Proteína/Péptido")
+            print("\n[*] Configuración: Complejo de Proteína + (Proteína/Péptido)")
             print("    -> Iniciando MM-PBSA para interacción P-P...")
             #self._execute_mmpbsa(self.mmpbsa_peptide, "Proteína-Proteína")
 
@@ -57,18 +54,21 @@ class AnalysisStep:
     
     def _run_general_analysis(self):
         try:
-            print(f"[*] Iniciando GromacsAnalyzer")
-            analyzer = GromacsAnalyzer (results_dir=self.work_dir, sim_type= str(self.config.get("sim_type")), gmx_bin=self.gmx_bin)
-            # se guarden en 'results' y no ensucien el 'work_dir'
-            for key in analyzer.analysis_dirs:
-                analyzer.analysis_dirs[key] = os.path.join(self.results_dir, os.path.basename(analyzer.analysis_dirs[key]))
-                if not os.path.exists(analyzer.analysis_dirs[key]):
-                    os.makedirs(analyzer.analysis_dirs[key])
+            # Instanciamos apuntando a work_dir
+            analyzer = GromacsAnalyzer(
+                results_dir=self.results_dir, 
+                sim_type=str(self.config.get("sim_type", "1")), 
+                gmx_bin=self.gmx_bin
+            )
 
-            analyzer.run_full_analysis()
-            print("[✓] Análisis estructural y energético completado.")
+            for key in analyzer.analysis_dirs:
+                os.makedirs(analyzer.analysis_dirs[key], exist_ok=True)
+
+            # Ejecutamos el análisis
+            analyzer.run_pipeline_analysis(plot_only=self.config.get("plot_only", False))
+        
         except Exception as e:
-            print(f"[X] Error crítico en el análisis importado: {e}")
+            print(f"[X] Error en el análisis: {e}")
 
     def _execute_mmpbsa(self, script_path, label):
         # Helper para ejecutar los wrappers de MM-PBSA
@@ -110,7 +110,7 @@ CONFIGURACIÓN:
 -------------
    Sistema:           {sim_label}
    Tiempo solicitado: {ns} ns
-   Directorio:        {self.work_dir}
+   Directorio:        {self.results_dir}
    Campo de fuerza:   AMBER03
    Modelo de agua:    TIP3P
    Temperatura:       300 K
@@ -137,9 +137,7 @@ COMANDOS ÚTILES:
 ----------------
   # Visualizar en VMD
   vmd md.pdb md_center.xtc
-  
-  # Regenerar gráficas (solo si es necesario)
-  python3 {os.path.basename(self.analysis_script)} -d . --plot-only
+
 
 ═══════════════════════════════════════════════════════════
 """

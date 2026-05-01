@@ -6,6 +6,7 @@ from .equilibration import EquilibrationStep
 from .production import ProductionStep
 from .post_processing import PostProcessingStep
 from .ligand_topology import LigandTopologyStep
+from .analysis import AnalysisStep
 
 __all__ = [
     "TopologyStep",
@@ -15,5 +16,6 @@ __all__ = [
     "EquilibrationStep",
     "ProductionStep",
     "PostProcessingStep",
-    "LigandTopologyStep"
+    "LigandTopologyStep",
+    "AnalysisStep"
 ]

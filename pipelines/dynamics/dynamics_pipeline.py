@@ -2,7 +2,7 @@ import os
 
 from pipelines.dynamics.steps.ligand_topology import LigandTopologyStep
 from .utils import check_gmx_installation
-from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep
+from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep, AnalysisStep
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -66,6 +66,11 @@ class DynamicsPipeline:
             print("\n[Paso 7/7] Post-procesando resultados...")
             post_proc = PostProcessingStep(self.config, self.gmx_bin)
             post_proc.run()
+
+            # 8. Ejecutar Paso 8: Análisis
+            print("\n[Paso 8/8] Analizando resultados...")
+            analysis = AnalysisStep(self.config, self.gmx_bin)
+            analysis.run()
 
             print("\n[✓] ¡Proceso de Dinámica finalizado con éxito!")
         except Exception as e:

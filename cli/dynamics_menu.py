@@ -37,8 +37,17 @@ def run_dynamics_menu():
         "sim_type": sim_type,
         "ns_time": ns_time,
         "threads": num_threads,
-        "work_dir": "data/output/dynamics"
+        "work_dir": "data/output/dynamics",
+        "sim_type_label": {
+            "1": "Proteína sola",
+            "2": "Proteína + Ligando pequeño",
+            "3": "Proteína + Péptido",
+            "4": "Proteína + Ácido nucleico",
+            "5": "Proteína + Proteína",
+            "6": "Proteína + Proteína + Cofactor"
+        }.get(sim_type, "Simulación MD")
     }
+
 
     # 4. PEDIR ARCHIVOS DE ENTRADA
     if sim_type == "2":
