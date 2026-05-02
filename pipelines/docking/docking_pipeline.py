@@ -150,6 +150,7 @@ class DockingPipeline:
 		docking_workers: Optional[int] = None,
 		autogrid_executable: Optional[str] = None,
 		autodock_gpu_executable: Optional[str] = None,
+		pdb_export_limit: int = 10,
 	) -> DockingPipelineResult:
 		"""Run preparation, docking execution, and analysis in sequence."""
 		result = self.run_preparation_pipeline(
@@ -166,7 +167,7 @@ class DockingPipeline:
 			autogrid_executable=autogrid_executable,
 			autodock_gpu_executable=autodock_gpu_executable,
 		)
-		docking_analysis = self.run_docking_analysis()
+		docking_analysis = self.run_docking_analysis(pdb_export_limit=pdb_export_limit)
 		result.docking_execution = docking_execution
 		result.docking_analysis = docking_analysis
 		return result
@@ -185,4 +186,5 @@ class DockingPipeline:
 		"""Run the docking analysis stage."""
 		return DockingAnalysis(
 			output_path=self.output_path,
+			pdb_export_limit=kwargs.pop("pdb_export_limit", 10),
 		).run(*args, **kwargs)

@@ -112,11 +112,14 @@ def _run_docking_analysis(args: Namespace) -> int:
 	except ImportError:
 		from chemlink.pipelines.docking.steps import DockingAnalysis  # type: ignore
 
-	step = DockingAnalysis(output_path=args.output_dir)
-	stats = step.run()
+	step = DockingAnalysis(output_path=args.output_dir, pdb_export_limit=args.pdb_export_limit)
+	results = step.run()
 	print("\nFinal Statistics:")
-	print(f"  Parsed: {stats['parsed']}")
-	print(f"  Summarized: {stats['summarized']}")
+	print(f"  Poses analyzed: {results['parsed_poses']}")
+	print(f"  Ligands analyzed: {results['analyzed_ligands']}")
+	print("\nOutput files:")
+	for report_name, report_path in results['outputs'].items():
+		print(f"  • {report_name}: {report_path}")
 	return 0
 
 
@@ -145,6 +148,7 @@ def _run_docking_pipeline(args: Namespace, full: bool) -> int:
 			docking_workers=args.docking_workers,
 			autogrid_executable=args.autogrid_executable,
 			autodock_gpu_executable=args.autodock_gpu_executable,
+			pdb_export_limit=args.pdb_export_limit,
 		)
 	else:
 		result = pipeline.run_preparation_pipeline(
@@ -204,6 +208,7 @@ def _add_pipeline_full_only_args(parser: ArgumentParser) -> None:
 	parser.add_argument("--docking-workers", "-d", type=int, default=1, help="Workers for docking execution (default: 1)")
 	parser.add_argument("--autogrid-executable", "--autogrid", dest="autogrid_executable", default=None, help="AutoGrid4 executable")
 	parser.add_argument("--autodock-gpu-executable", "--autodock", dest="autodock_gpu_executable", default=None, help="AutoDock-GPU executable")
+	parser.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
 
 
 def _register_legacy_commands(subparsers) -> None:
@@ -247,6 +252,7 @@ def _register_legacy_commands(subparsers) -> None:
 	# docking-analysis
 	analysis = subparsers.add_parser("docking-analysis", help="Analyze docking DLG files and generate reports")
 	analysis.add_argument("output_dir", help="Base output directory")
+	analysis.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
 	analysis.set_defaults(handler=_run_docking_analysis)
 
 	# docking-pipeline (legacy flat command)
@@ -296,6 +302,7 @@ def _register_grouped_commands(subparsers) -> None:
 
 	analyze = docking_sub.add_parser("analyze", aliases=["analysis"], help="Analyze generated DLG results")
 	analyze.add_argument("output_dir", help="Base output directory")
+	analyze.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
 	analyze.set_defaults(handler=_run_docking_analysis)
 
 

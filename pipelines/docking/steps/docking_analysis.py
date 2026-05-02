@@ -4,10 +4,13 @@ import csv
 import glob
 import os
 import re
+import statistics
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
+import numpy as np
 
 from ....storage.file_manager import create_folder
 from ....utils.logger import setup_logger
@@ -16,27 +19,49 @@ logger = setup_logger(__name__)
 
 
 @dataclass(frozen=True)
-class DockingResult:
-	"""Normalized docking result extracted from one DLG file."""
+class DockingPose:
+	"""Single docking pose from a DLG file."""
 
 	protein: str
 	ligand: str
-	affinity: Optional[float]
-	run: Optional[int]
-	rmsd: Optional[float]
+	run: int
+	affinity: float
 	dlg_file: str
 
 
-class DockingAnalysis:
-	"""Analyze AutoDock outputs and generate summary reports."""
+@dataclass(frozen=True)
+class DockingLigandStats:
+	"""Aggregated statistics for a ligand across all poses."""
 
-	def __init__(self, output_path: str):
+	protein: str
+	ligand: str
+	num_poses: int
+	best_run: int
+	best_affinity: float  # Most negative (best binding)
+	worst_affinity: float  # Least negative (worst binding)
+	mean_affinity: float
+	std_affinity: float
+	dlg_file: str
+	mean_rmsd: Optional[float] = None
+	std_rmsd: Optional[float] = None
+	qc_flag: Optional[str] = None
+	best_pose_pdb: Optional[str] = None
+
+
+class DockingAnalysis:
+	"""Analyze AutoDock-GPU docking outputs with comprehensive statistical analysis."""
+
+	def __init__(self, output_path: str, pdb_export_limit: int = 10):
 		self.output_path = output_path
 		self.results_dir = os.path.join(self.output_path, "ResultadosDocking")
 		self.analysis_dir = os.path.join(self.output_path, "AnalisisDocking")
-		self.summary_txt = os.path.join(self.analysis_dir, "resumen_analisis.txt")
-		self.summary_csv = os.path.join(self.analysis_dir, "resumen_analisis.csv")
-		self.summary_md = os.path.join(self.analysis_dir, "resumen_analisis.md")
+		self.summary_txt = os.path.join(self.analysis_dir, "docking_analysis_summary.txt")
+		self.summary_csv = os.path.join(self.analysis_dir, "docking_statistics.csv")
+		self.legacy_csv = os.path.join(self.analysis_dir, "Estadisticas_Completas.csv")
+		self.summary_md = os.path.join(self.analysis_dir, "docking_analysis_report.md")
+		self.ranking_csv = os.path.join(self.analysis_dir, "ligand_ranking.csv")
+		self.dynamics_candidates_csv = os.path.join(self.analysis_dir, "dynamics_candidates.csv")
+		self.pdb_export_limit = max(0, pdb_export_limit)
 
 	@staticmethod
 	def _parse_float(value: str) -> Optional[float]:
@@ -52,125 +77,513 @@ class DockingAnalysis:
 		except (TypeError, ValueError):
 			return None
 
-	def _parse_dlg(self, dlg_path: str) -> DockingResult:
-		"""Parse the best affinity from a DLG file."""
+	def _parse_dlg(self, dlg_path: str) -> List[DockingPose]:
+		"""
+		Parse ALL poses from a DLG file.
+		
+		AutoDock-GPU DLG files report each pose as a block:
+		Run:   N / total
+		Estimated Free Energy of Binding =  -8.10 kcal/mol
+		"""
+		poses: List[DockingPose] = []
 		protein = Path(dlg_path).parent.parent.name
 		base = Path(dlg_path).stem
 		ligand = base.replace(f"{protein}_", "", 1)
+		current_run: Optional[int] = None
 
-		affinity = None
-		run = None
-		rmsd = None
+		try:
+			with open(dlg_path, "r", encoding="utf-8", errors="ignore") as handle:
+				for line in handle:
+					if "Run:" in line:
+						run_match = re.search(r"Run:\s*(\d+)\s*/", line)
+						if run_match:
+							current_run = self._parse_int(run_match.group(1))
 
-		with open(dlg_path, "r", encoding="utf-8", errors="ignore") as handle:
-			for line in handle:
-				match = re.search(r"^\s*(\d+)\s+[-+]?[0-9]*\.?[0-9]+\s+[-+]?[0-9]*\.?[0-9]+\s+([-+]?[0-9]*\.?[0-9]+)\s+([-+]?[0-9]*\.?[0-9]+)", line)
-				if match:
-					run = self._parse_int(match.group(1))
-					affinity = self._parse_float(match.group(2))
-					rmsd = self._parse_float(match.group(3))
-					break
+					if "Estimated Free Energy of Binding" in line and current_run is not None:
+						affinity_match = re.search(
+							r"Estimated Free Energy of Binding\s*=\s*([-+]?[0-9]*\.?[0-9]+)",
+							line,
+						)
+						if affinity_match:
+							affinity = self._parse_float(affinity_match.group(1))
+							if affinity is not None:
+								poses.append(DockingPose(
+									protein=protein,
+									ligand=ligand,
+									run=current_run,
+									affinity=affinity,
+									dlg_file=dlg_path,
+								))
+		except Exception as exc:
+			logger.warning("Error parsing DLG %s: %s", dlg_path, exc)
 
-		return DockingResult(
-			protein=protein,
-			ligand=ligand,
-			affinity=affinity,
-			run=run,
-			rmsd=rmsd,
-			dlg_file=dlg_path,
+		return poses
+
+	def _extract_pose_coords(self, dlg_path: str, run_number: int) -> Optional[np.ndarray]:
+		"""Extract 3D coordinates for a given run from a DLG file as an (N,3) array.
+
+		Returns None if coordinates cannot be extracted.
+		"""
+		coords: List[List[float]] = []
+		run_marker = f"Run:   {run_number} /"
+		in_target = False
+		try:
+			with open(dlg_path, "r", encoding="utf-8", errors="ignore") as handle:
+				for line in handle:
+					if line.strip().startswith("Run:") and run_marker in line:
+						in_target = True
+						continue
+					if not in_target:
+						continue
+					# Look for DOCKED: ATOM / HETATM lines which contain coordinates
+					m = re.match(r"DOCKED:\s+(?:ATOM|HETATM)\s+\d+\s+\S+\s+\S+\s+\S+\s+\d+\s+([\-0-9\.]+)\s+([\-0-9\.]+)\s+([\-0-9\.]+)", line)
+					if m:
+						coords.append([float(m.group(1)), float(m.group(2)), float(m.group(3))])
+					# End of model block
+					if in_target and line.strip().startswith("DOCKED: ENDMDL"):
+						break
+			if not coords:
+				return None
+			return np.array(coords)
+		except Exception as exc:
+			logger.debug("Failed to extract coords from %s run %s: %s", dlg_path, run_number, exc)
+			return None
+
+	def _write_pose_pdb(self, coords: np.ndarray, out_path: str, ligand_name: str) -> None:
+		"""Write a simple PDB file for the ligand coordinates (no connectivity)."""
+		create_folder(os.path.dirname(out_path))
+		with open(out_path, "w", encoding="utf-8") as handle:
+			for i, (x, y, z) in enumerate(coords, 1):
+				atom_line = (
+					"HETATM%5d  C   %3s     1    %8.3f%8.3f%8.3f  1.00  0.00           C\n"
+					% (i, ligand_name[:3].upper(), x, y, z)
+				)
+				handle.write(atom_line)
+
+	@staticmethod
+	def _rmsd_kabsch(P: np.ndarray, Q: np.ndarray) -> Optional[float]:
+		"""Compute RMSD between two coordinate sets using the Kabsch algorithm.
+
+		P and Q must have shape (N,3) and the same ordering.
+		Returns None if computation cannot be performed.
+		"""
+		try:
+			if P.shape != Q.shape or P.size == 0:
+				return None
+			P_cent = P - P.mean(axis=0)
+			Q_cent = Q - Q.mean(axis=0)
+			C = P_cent.T @ Q_cent
+			V, S, Wt = np.linalg.svd(C)
+			d = np.sign(np.linalg.det(V @ Wt))
+			D = np.diag([1.0, 1.0, d])
+			U = V @ D @ Wt
+			P_rot = P_cent @ U
+			diff = P_rot - Q_cent
+			rmsd = float(np.sqrt((diff * diff).sum() / P.shape[0]))
+			return rmsd
+		except Exception:
+			return None
+
+	def _collect_all_poses(self) -> List[DockingPose]:
+		"""Collect every pose from all DLG files in the results tree."""
+		all_poses: List[DockingPose] = []
+		dlg_files = glob.glob(os.path.join(self.results_dir, "**", "dlg", "*.dlg"), recursive=True)
+		logger.info("Found %d DLG files to analyze", len(dlg_files))
+
+		for dlg_path in dlg_files:
+			poses = self._parse_dlg(dlg_path)
+			all_poses.extend(poses)
+			if poses:
+				logger.debug("Parsed %d poses from %s", len(poses), Path(dlg_path).name)
+
+		return all_poses
+
+	def _calculate_ligand_statistics(self, poses: List[DockingPose]) -> List[DockingLigandStats]:
+		"""
+		Group poses by ligand and calculate statistics.
+		
+		For scientists:
+		- Best affinity: most negative (strongest binding)
+		- Worst affinity: least negative (weakest binding)
+		- Mean affinity: average energy across all poses
+		- Std affinity: variability in docking solutions
+		"""
+		ligand_groups: Dict[tuple, List[DockingPose]] = defaultdict(list)
+
+		# Group by protein-ligand pair
+		for pose in poses:
+			key = (pose.protein, pose.ligand, pose.dlg_file)
+			ligand_groups[key].append(pose)
+
+		stats_list: List[DockingLigandStats] = []
+
+		for (protein, ligand, dlg_file), group in ligand_groups.items():
+			if not group:
+				continue
+
+			affinities = [p.affinity for p in group]
+			best_pose = min(group, key=lambda p: p.affinity)
+
+			best_affinity = min(affinities)  # Most negative
+			worst_affinity = max(affinities)  # Least negative
+			mean_affinity = statistics.mean(affinities)
+			std_affinity = statistics.pstdev(affinities) if len(affinities) > 1 else 0.0
+
+			# Build base stats
+			best_pose_obj = best_pose
+			best_run_num = best_pose_obj.run if best_pose_obj is not None else None
+
+			# Attempt to compute RMSD of all poses to best; PDB export is handled later
+			mean_rmsd = None
+			std_rmsd = None
+			best_pose_pdb = None
+			try:
+				if best_run_num is not None:
+					best_coords = self._extract_pose_coords(dlg_file, best_run_num)
+					if best_coords is not None:
+						# compute rmsd per pose
+						rmsds = []
+						for p in group:
+							coords = self._extract_pose_coords(p.dlg_file, p.run)
+							if coords is None or coords.shape != best_coords.shape:
+								continue
+							r = self._rmsd_kabsch(best_coords, coords)
+							if r is not None:
+								rmsds.append(r)
+						if rmsds:
+							mean_rmsd = float(statistics.mean(rmsds))
+							std_rmsd = float(statistics.pstdev(rmsds)) if len(rmsds) > 1 else 0.0
+			except Exception as exc:
+				logger.debug("RMSD calculation failed for %s %s: %s", protein, ligand, exc)
+
+			# QC flags (simple heuristics)
+			qc_flag = "PASS"
+			if len(affinities) < 10:
+				qc_flag = "LOW_POSES"
+			if mean_affinity > -6.0:
+				qc_flag = "WEAK_BINDER"
+			if std_affinity > 3.0:
+				qc_flag = "HIGH_VARIABILITY"
+			if mean_rmsd is None:
+				qc_flag = "NO_POSE_PDB"
+
+			stats_list.append(DockingLigandStats(
+				protein=protein,
+				ligand=ligand,
+				num_poses=len(group),
+				best_run=best_pose.run,
+				best_affinity=best_affinity,
+				worst_affinity=worst_affinity,
+				mean_affinity=mean_affinity,
+				std_affinity=std_affinity,
+				dlg_file=dlg_file,
+				mean_rmsd=mean_rmsd,
+				std_rmsd=std_rmsd,
+				qc_flag=qc_flag,
+				best_pose_pdb=best_pose_pdb,
+			))
+
+		return sorted(
+			stats_list,
+			key=lambda s: (s.protein, s.mean_affinity)  # Sort by protein, then by affinity
 		)
 
-	def _collect_results(self) -> List[DockingResult]:
-		"""Collect every DLG file from the docking results tree."""
-		results: List[DockingResult] = []
-		for dlg_path in glob.glob(os.path.join(self.results_dir, "*", "dlg", "*.dlg")):
-			try:
-				results.append(self._parse_dlg(dlg_path))
-			except Exception as exc:
-				logger.warning("Could not parse %s: %s", dlg_path, exc)
-		return results
-
-	def _best_results(self, results: Iterable[DockingResult]) -> List[DockingResult]:
-		"""Pick the best affinity per protein/ligand pair."""
-		best: Dict[tuple, DockingResult] = {}
-		for result in results:
-			key = (result.protein, result.ligand)
-			if result.affinity is None:
-				continue
-			current = best.get(key)
-			if current is None or (current.affinity is not None and result.affinity < current.affinity):
-				best[key] = result
-		return sorted(best.values(), key=lambda item: (item.protein, item.affinity if item.affinity is not None else float("inf")))
-
-	def _write_text_summary(self, results: List[DockingResult]) -> None:
-		"""Write a human-readable summary."""
-		with open(self.summary_txt, "w", encoding="utf-8") as handle:
-			handle.write("DOCKING ANALYSIS SUMMARY\n")
-			handle.write(f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}\n")
-			handle.write("=" * 72 + "\n\n")
-			for result in results:
-				handle.write(f"Protein: {result.protein}\n")
-				handle.write(f"Ligand: {result.ligand}\n")
-				handle.write(f"Affinity: {result.affinity if result.affinity is not None else 'N/A'}\n")
-				handle.write(f"Run: {result.run if result.run is not None else 'N/A'}\n")
-				handle.write(f"RMSD: {result.rmsd if result.rmsd is not None else 'N/A'}\n")
-				handle.write(f"DLG: {result.dlg_file}\n")
-				handle.write("-" * 72 + "\n")
-
-	def _write_csv_summary(self, results: List[DockingResult]) -> None:
-		"""Write a CSV summary for downstream analysis."""
+	def _write_statistics_csv(self, stats: List[DockingLigandStats]) -> None:
+		"""Write aggregated statistics to CSV (scientific format)."""
 		with open(self.summary_csv, "w", newline="", encoding="utf-8") as handle:
 			writer = csv.DictWriter(
 				handle,
-				fieldnames=["protein", "ligand", "affinity", "run", "rmsd", "dlg_file"],
+				fieldnames=[
+					"protein", "ligand", "num_poses", "best_run", "best_affinity_kcal_mol",
+					"mean_affinity_kcal_mol", "std_affinity_kcal_mol",
+					"worst_affinity_kcal_mol", "dlg_file",
+					"mean_rmsd", "std_rmsd", "qc_flag", "best_pose_pdb",
+				],
 			)
 			writer.writeheader()
-			for result in results:
-				writer.writerow(
-					{
-						"protein": result.protein,
-						"ligand": result.ligand,
-						"affinity": result.affinity,
-						"run": result.run,
-						"rmsd": result.rmsd,
-						"dlg_file": result.dlg_file,
-					}
+			for stat in stats:
+				writer.writerow({
+					"protein": stat.protein,
+					"ligand": stat.ligand,
+					"num_poses": stat.num_poses,
+					"best_run": stat.best_run,
+					"best_affinity_kcal_mol": f"{stat.best_affinity:.2f}",
+					"mean_affinity_kcal_mol": f"{stat.mean_affinity:.2f}",
+					"std_affinity_kcal_mol": f"{stat.std_affinity:.2f}",
+					"worst_affinity_kcal_mol": f"{stat.worst_affinity:.2f}",
+					"dlg_file": stat.dlg_file,
+					"mean_rmsd": f"{stat.mean_rmsd:.2f}" if stat.mean_rmsd is not None else "",
+					"std_rmsd": f"{stat.std_rmsd:.2f}" if stat.std_rmsd is not None else "",
+					"qc_flag": stat.qc_flag or "",
+					"best_pose_pdb": stat.best_pose_pdb or "",
+				})
+
+	def _write_legacy_statistics_csv(self, stats: List[DockingLigandStats]) -> None:
+		"""Write a compatibility CSV using the schema from the reference script."""
+		with open(self.legacy_csv, "w", newline="", encoding="utf-8") as handle:
+			writer = csv.DictWriter(
+				handle,
+				fieldnames=["Molécula", "MaxScore", "MeanScore", "StanDesv"],
+			)
+			writer.writeheader()
+			for stat in stats:
+				writer.writerow({
+					"Molécula": stat.ligand,
+					"MaxScore": f"{stat.best_affinity:.2f}",
+					"MeanScore": f"{stat.mean_affinity:.2f}",
+					"StanDesv": f"{stat.std_affinity:.2f}",
+				})
+
+	def _write_ranking_csv(self, stats: List[DockingLigandStats]) -> None:
+		"""Write ligand ranking by binding affinity (most negative = best)."""
+		ranked = sorted(stats, key=lambda s: s.mean_affinity)
+
+		with open(self.ranking_csv, "w", newline="", encoding="utf-8") as handle:
+			writer = csv.DictWriter(
+				handle,
+				fieldnames=[
+					"rank", "ligand", "protein", "mean_affinity_kcal_mol",
+					"std_affinity_kcal_mol", "best_affinity_kcal_mol", "num_poses",
+					"mean_rmsd", "std_rmsd", "qc_flag", "best_pose_pdb",
+				],
+			)
+			writer.writeheader()
+			for rank, stat in enumerate(ranked, 1):
+				writer.writerow({
+					"rank": rank,
+					"ligand": stat.ligand,
+					"protein": stat.protein,
+					"mean_affinity_kcal_mol": f"{stat.mean_affinity:.2f}",
+					"std_affinity_kcal_mol": f"{stat.std_affinity:.2f}",
+					"best_affinity_kcal_mol": f"{stat.best_affinity:.2f}",
+					"num_poses": stat.num_poses,
+					"mean_rmsd": f"{stat.mean_rmsd:.2f}" if stat.mean_rmsd is not None else "",
+					"std_rmsd": f"{stat.std_rmsd:.2f}" if stat.std_rmsd is not None else "",
+					"qc_flag": stat.qc_flag or "",
+					"best_pose_pdb": stat.best_pose_pdb or "",
+				})
+
+	def _write_dynamics_candidates_csv(self, stats: List[DockingLigandStats], top_n: int = 10) -> None:
+		"""Write the ligands that should be considered next for dynamics.
+
+		This step does not start dynamics; it only exports ranked candidates so
+		that a downstream dynamics step can consume a clean, isolated input.
+		"""
+		ranked = sorted(stats, key=lambda s: (s.mean_affinity, s.best_affinity))[:top_n]
+
+		with open(self.dynamics_candidates_csv, "w", newline="", encoding="utf-8") as handle:
+			writer = csv.DictWriter(
+				handle,
+				fieldnames=[
+					"rank", "protein", "ligand", "mean_affinity_kcal_mol",
+					"std_affinity_kcal_mol", "best_affinity_kcal_mol",
+					"best_run", "num_poses", "dlg_file", "qc_flag", "best_pose_pdb",
+				],
+			)
+			writer.writeheader()
+			for rank, stat in enumerate(ranked, 1):
+				writer.writerow({
+					"rank": rank,
+					"protein": stat.protein,
+					"ligand": stat.ligand,
+					"mean_affinity_kcal_mol": f"{stat.mean_affinity:.2f}",
+					"std_affinity_kcal_mol": f"{stat.std_affinity:.2f}",
+					"best_affinity_kcal_mol": f"{stat.best_affinity:.2f}",
+					"best_run": stat.best_run,
+					"num_poses": stat.num_poses,
+					"dlg_file": stat.dlg_file,
+					"qc_flag": stat.qc_flag or "",
+					"best_pose_pdb": stat.best_pose_pdb or "",
+				})
+
+	def _export_best_candidate_pdbs(self, stats: List[DockingLigandStats], top_n: int = 10) -> None:
+		"""Export PDBs only for the top ranked candidates.
+
+		This keeps the analysis fast and limits file generation to the ligands that
+		actually matter for the next dynamics step.
+		"""
+		ranked = sorted(stats, key=lambda s: (s.mean_affinity, s.best_affinity))[:top_n]
+		pdb_dir = os.path.join(self.analysis_dir, "poses_for_md")
+		create_folder(pdb_dir)
+		stats_by_key = {(s.protein, s.ligand, s.dlg_file): s for s in stats}
+
+		for stat in ranked:
+			coords = self._extract_pose_coords(stat.dlg_file, stat.best_run)
+			if coords is None:
+				continue
+			pdb_name = f"{stat.protein}_{stat.ligand}_best_run_{stat.best_run}.pdb"
+			pdb_path = os.path.join(pdb_dir, pdb_name)
+			self._write_pose_pdb(coords, pdb_path, stat.ligand)
+			key = (stat.protein, stat.ligand, stat.dlg_file)
+			if key in stats_by_key:
+				updated = stats_by_key[key]
+				stats_by_key[key] = DockingLigandStats(
+					protein=updated.protein,
+					ligand=updated.ligand,
+					num_poses=updated.num_poses,
+					best_run=updated.best_run,
+					best_affinity=updated.best_affinity,
+					worst_affinity=updated.worst_affinity,
+					mean_affinity=updated.mean_affinity,
+					std_affinity=updated.std_affinity,
+					dlg_file=updated.dlg_file,
+					mean_rmsd=updated.mean_rmsd,
+					std_rmsd=updated.std_rmsd,
+					qc_flag=updated.qc_flag,
+					best_pose_pdb=pdb_path,
 				)
 
-	def _write_markdown_summary(self, results: List[DockingResult]) -> None:
-		"""Write a markdown report for quick inspection."""
-		with open(self.summary_md, "w", encoding="utf-8") as handle:
-			handle.write("# Docking Analysis Summary\n\n")
-			handle.write(f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}\n\n")
-			handle.write("| Protein | Ligand | Affinity | Run | RMSD | DLG |\n")
-			handle.write("|---|---|---:|---:|---:|---|\n")
-			for result in results:
+		# Persist the updated best_pose_pdb values back into the original list order.
+		for index, stat in enumerate(stats):
+			key = (stat.protein, stat.ligand, stat.dlg_file)
+			if key in stats_by_key:
+				stats[index] = stats_by_key[key]
+
+	def _write_text_summary(self, stats: List[DockingLigandStats], poses: List[DockingPose]) -> None:
+		"""Write human-readable analysis summary for scientists."""
+		with open(self.summary_txt, "w", encoding="utf-8") as handle:
+			# Header
+			handle.write("=" * 80 + "\n")
+			handle.write("DOCKING ANALYSIS SUMMARY - ENERGY STATISTICS\n")
+			handle.write(f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+			handle.write("=" * 80 + "\n\n")
+
+			# Global statistics
+			if poses:
+				all_affinities = [p.affinity for p in poses]
+				global_mean = statistics.mean(all_affinities)
+				global_std = statistics.stdev(all_affinities) if len(all_affinities) > 1 else 0.0
+				global_best = min(all_affinities)
+				global_worst = max(all_affinities)
+
+				handle.write("GLOBAL STATISTICS (All Poses)\n")
+				handle.write("-" * 80 + "\n")
+				handle.write(f"Total poses analyzed: {len(all_affinities)}\n")
+				handle.write(f"Total docking runs: {len(stats)}\n")
+				handle.write(f"Mean binding affinity: {global_mean:>8.2f} kcal/mol\n")
+				handle.write(f"Std deviation: {global_std:>8.2f} kcal/mol\n")
+				handle.write(f"Best (most negative): {global_best:>8.2f} kcal/mol\n")
+				handle.write(f"Worst (least negative): {global_worst:>8.2f} kcal/mol\n")
+				handle.write(f"Energy range: {(global_worst - global_best):>8.2f} kcal/mol\n")
+				handle.write("\n")
+
+			# Per-ligand analysis
+			handle.write("PER-LIGAND ANALYSIS\n")
+			handle.write("-" * 80 + "\n\n")
+
+			for i, stat in enumerate(stats, 1):
+				handle.write(f"{i}. {stat.ligand}\n")
+				handle.write(f"   Protein: {stat.protein}\n")
+				handle.write(f"   Poses: {stat.num_poses}\n")
+				handle.write(f"   Best affinity (strongest binding): {stat.best_affinity:>8.2f} kcal/mol\n")
+				handle.write(f"   Mean affinity: {stat.mean_affinity:>8.2f} kcal/mol ± {stat.std_affinity:.2f}\n")
+				handle.write(f"   Worst affinity (weakest binding): {stat.worst_affinity:>8.2f} kcal/mol\n")
+				handle.write("\n")
+
+			# Ranking table
+			handle.write("\n" + "=" * 80 + "\n")
+			handle.write("LIGAND RANKING BY MEAN BINDING AFFINITY\n")
+			handle.write("=" * 80 + "\n")
+			handle.write(f"{'Rank':<6} {'Ligand':<30} {'Mean Affinity':<18} {'±':<8} {'Poses':<8}\n")
+			handle.write("-" * 80 + "\n")
+
+			ranked = sorted(stats, key=lambda s: s.mean_affinity)
+			for rank, stat in enumerate(ranked, 1):
+				ligand_short = stat.ligand[:28]
 				handle.write(
-					f"| {result.protein} | {result.ligand} | {result.affinity if result.affinity is not None else 'N/A'} | "
-					f"{result.run if result.run is not None else 'N/A'} | {result.rmsd if result.rmsd is not None else 'N/A'} | "
-					f"{result.dlg_file} |\n"
+					f"{rank:<6} {ligand_short:<30} {stat.mean_affinity:>8.2f} kcal/mol  "
+					f"± {stat.std_affinity:<6.2f}  {stat.num_poses:<8}\n"
 				)
 
-	def run(self) -> Dict[str, int]:
-		"""Execute docking analysis and create summary reports."""
-		logger.info("Starting docking analysis")
-		create_folder(self.analysis_dir)
-		results = self._collect_results()
-		if not results:
-			logger.warning("No DLG files found for analysis in %s", self.results_dir)
-		best_results = self._best_results(results)
+			# Interpretation
+			handle.write("\n" + "=" * 80 + "\n")
+			handle.write("INTERPRETATION GUIDE\n")
+			handle.write("=" * 80 + "\n")
+			handle.write("""
+• AFFINITY (kcal/mol): Binding free energy. More negative = more favorable.
+  - < -10.0: Strong binding (potentially good lead)
+  - -8 to -10: Moderate binding (promising)
+  - -6 to -8: Weak binding
+  - > -6: Very weak binding
 
-		self._write_text_summary(best_results)
-		self._write_csv_summary(best_results)
-		self._write_markdown_summary(best_results)
-		logger.info(
-			"Docking analysis completed: parsed=%d, summarized=%d, outputs=%s",
-			len(results),
-			len(best_results),
-			self.analysis_dir,
-		)
+• STD AFFINITY: Variability across poses. Lower is better (more consistent).
+  - < 2.0: Consistent docking solutions
+  - > 3.0: Variable results (may need re-docking with different parameters)
+
+• RANKING: Based on mean affinity. Best leads listed first.
+""")
+
+	def _write_markdown_summary(self, stats: List[DockingLigandStats]) -> None:
+		"""Write markdown report for quick inspection and documentation."""
+		with open(self.summary_md, "w", encoding="utf-8") as handle:
+			handle.write("# Docking Analysis Report\n\n")
+			handle.write(f"**Generated:** {datetime.now():%Y-%m-%d %H:%M:%S}\n\n")
+
+			handle.write("## Summary Statistics\n\n")
+			handle.write(f"**Total ligands analyzed:** {len(stats)}\n")
+			handle.write(f"**Total docking poses:** {sum(s.num_poses for s in stats)}\n\n")
+
+			handle.write("## Top 10 Ligands by Binding Affinity\n\n")
+			handle.write("| Rank | Ligand | Mean Affinity | Std Dev | Best Pose | Poses |\n")
+			handle.write("|---:|---|---:|---:|---:|---:|\n")
+
+			ranked = sorted(stats, key=lambda s: s.mean_affinity)[:10]
+			for rank, stat in enumerate(ranked, 1):
+				handle.write(
+					f"| {rank} | {stat.ligand} | {stat.mean_affinity:.2f} | "
+					f"{stat.std_affinity:.2f} | {stat.best_affinity:.2f} | {stat.num_poses} |\n"
+				)
+
+			handle.write("\n## Output Files\n\n")
+			handle.write("- **docking_statistics.csv**: Aggregated statistics per ligand\n")
+			handle.write("- **ligand_ranking.csv**: Ranked ligands by binding affinity\n")
+			handle.write("- **docking_analysis_summary.txt**: Detailed text report\n")
+
+	def run(self) -> Dict[str, Any]:
+		"""Execute full docking analysis pipeline."""
+		logger.info("Starting docking analysis in %s", self.results_dir)
+		create_folder(self.analysis_dir)
+
+		# Collect and parse all poses
+		all_poses = self._collect_all_poses()
+		if not all_poses:
+			logger.warning("No DLG files or poses found for analysis in %s", self.results_dir)
+			return {"parsed_poses": 0, "analyzed_ligands": 0}
+
+		logger.info("Parsed %d poses from DLG files", len(all_poses))
+
+		# Calculate statistics
+		ligand_stats = self._calculate_ligand_statistics(all_poses)
+		logger.info("Calculated statistics for %d ligand docking runs", len(ligand_stats))
+
+		# Export PDBs only for the best-ranked candidates before writing CSVs
+		self._export_best_candidate_pdbs(ligand_stats, top_n=self.pdb_export_limit)
+
+		# Generate outputs
+		self._write_statistics_csv(ligand_stats)
+		self._write_legacy_statistics_csv(ligand_stats)
+		self._write_ranking_csv(ligand_stats)
+		self._write_dynamics_candidates_csv(ligand_stats)
+		self._write_text_summary(ligand_stats, all_poses)
+		self._write_markdown_summary(ligand_stats)
+
+		logger.info("Docking analysis completed successfully")
+		logger.info("  - Statistics: %s", self.summary_csv)
+		logger.info("  - Legacy statistics: %s", self.legacy_csv)
+		logger.info("  - Ranking: %s", self.ranking_csv)
+		logger.info("  - Dynamics candidates: %s", self.dynamics_candidates_csv)
+		logger.info("  - Report: %s", self.summary_txt)
 
 		return {
-			"parsed": len(results),
-			"summarized": len(best_results),
+			"parsed_poses": len(all_poses),
+			"analyzed_ligands": len(ligand_stats),
+			"outputs": {
+				"statistics_csv": self.summary_csv,
+				"legacy_statistics_csv": self.legacy_csv,
+				"ranking_csv": self.ranking_csv,
+				"dynamics_candidates_csv": self.dynamics_candidates_csv,
+				"poses_for_md_dir": os.path.join(self.analysis_dir, "poses_for_md"),
+				"text_report": self.summary_txt,
+				"markdown_report": self.summary_md,
+			}
 		}

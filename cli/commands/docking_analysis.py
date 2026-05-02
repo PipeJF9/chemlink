@@ -9,13 +9,20 @@ def register(subparsers) -> None:
 		help="Analyze docking DLG files and generate reports",
 	)
 	parser.add_argument("output_dir", help="Base output directory")
+	parser.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
 	parser.set_defaults(handler=_run)
 
 
 def _run(args) -> int:
-	step = DockingAnalysis(output_path=args.output_dir)
-	stats = step.run()
-	print("\nFinal Statistics:")
-	print(f"  Parsed: {stats['parsed']}")
-	print(f"  Summarized: {stats['summarized']}")
+	step = DockingAnalysis(output_path=args.output_dir, pdb_export_limit=args.pdb_export_limit)
+	results = step.run()
+	
+	print("\nDocking Analysis Complete:")
+	print(f"  Poses analyzed: {results['parsed_poses']}")
+	print(f"  Ligands analyzed: {results['analyzed_ligands']}")
+	
+	print("\nOutput files generated:")
+	for name, path in results['outputs'].items():
+		print(f"  • {name}")
+	
 	return 0
