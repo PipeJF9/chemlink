@@ -81,7 +81,10 @@ class ProductionStep:
             self.gmx_bin, "mdrun",
             "-v",
             "-deffnm", self.output_base,
-            "-ntomp", str(self.config.get("threads", 8))
+            "-ntomp", str(self.config.get("threads", 8)),
+            "-nb", "gpu",       
+            "-pme", "gpu",      
+            "-update", "gpu"
         ]
 
         try:

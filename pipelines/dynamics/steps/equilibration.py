@@ -112,12 +112,15 @@ class EquilibrationStep:
             self.gmx_bin, "mdrun", 
             "-v",
             "-deffnm", "nvt", 
-            "-ntomp", str(self.config.get("threads", 8))
+            "-ntomp", str(self.config.get("threads", 8)),
+            "-nb", "gpu",       
+            "-pme", "gpu",      
+            "-update", "gpu"
             ]
         subprocess.run(mdrun_nvt, check=True, cwd=self.config["work_dir"])
 
         # FASE 2: NPT
-        print("   -> Iniciando fase NPT (Estabilización de Presión)...")
+        print(f"   -> Iniciando fase NPT (Estabilización de Presión) {str(self.config.get('threads', 8))}")
         self._create_npt_mdp()
         
         grompp_npt = [
@@ -136,7 +139,10 @@ class EquilibrationStep:
             self.gmx_bin, "mdrun", 
             "-v",
             "-deffnm", "npt", 
-            "-ntomp", str(self.config.get("threads", 8))
+            "-ntomp", str(self.config.get("threads", 8)),
+            "-nb", "gpu",       
+            "-pme", "gpu",      
+            "-update", "gpu"
             ]
         subprocess.run(mdrun_npt, check=True, cwd=self.config["work_dir"])
 

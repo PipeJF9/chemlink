@@ -1,76 +1,37 @@
-#!/usr/bin/env python3
-"""
-MM-PBSA & MM-GBSA Free Energy Analysis
-VERSIÓN CORREGIDA: MPI funcionando + Extracción de energías mejorada
-"""
-
 import os
 import sys
 import subprocess
-import argparse
 import shutil
-from pathlib import Path
 import re
-
-# CONFIGURACIÓN HARDCODEADA
-CONDA_BASE = Path("/home/ChemFusion/funciones/Aplicaciones/miniconda3")
-CONDA_ENV = "gmx_mmpbsa"
-MPIRUN_PATH = Path("/home/ChemFusion/funciones/Aplicaciones/miniconda3/envs/gmx_mmpbsa/bin/mpirun")
-
-# Verificar MPI ANTES de imports
-print("🔍 Verificación inicial de MPI...")
-print(f"   Ruta: {MPIRUN_PATH}")
-print(f"   Existe: {MPIRUN_PATH.exists()}")
-MPI_AVAILABLE = MPIRUN_PATH.exists()
-if MPI_AVAILABLE:
-    print("   ✅ MPI disponible")
-else:
-    print("   ❌ MPI NO disponible")
-print()
-
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')
 
+matplotlib.use('Agg')
 plt.style.use('seaborn-v0_8-darkgrid')
 COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c']
 
 
 class GMX_MMPBSA_Analyzer:
-    """Analizador de energía libre usando gmx_MMPBSA"""
     
-    def __init__(self, results_dir: str, use_mpi: bool = False, n_cores: int = None):
+    def __init__(self, results_dir: str, use_mpi: bool = False, n_cores: int = 6):
         self.results_dir = Path(results_dir)
         self.binding_dir = self.results_dir / 'analisis_binding_energy'
-        self.binding_dir.mkdir(exist_ok=True)
         self.gmx_mmpbsa_dir = self.binding_dir / 'gmx_MMPBSA'
-        self.gmx_mmpbsa_dir.mkdir(exist_ok=True)
         
-        # Usar la variable global
-        self.mpi_available = MPI_AVAILABLE
+        self.gmx_mmpbsa_dir.mkdir(parents=True, exist_ok=True)
         
-        # Lógica de MPI
-        if n_cores is not None and n_cores > 1:
-            if self.mpi_available:
-                self.use_mpi = True
-                self.n_cores = n_cores
-                print(f"🚀 MPI HABILITADO con {n_cores} núcleos")
-            else:
-                print("⚠️  MPI solicitado pero no disponible - usando modo serial")
-                self.use_mpi = False
-                self.n_cores = 1
-        else:
-            self.use_mpi = use_mpi and self.mpi_available
-            self.n_cores = 4 if self.use_mpi else 1
-            if self.use_mpi:
-                print(f"🚀 MPI HABILITADO con {self.n_cores} núcleos")
+        self.use_mpi = False 
+        self.n_cores = 1
         
-        print(f"{'='*70}")
-        print(f"Directorio: {self.results_dir}")
-        print(f"Salida: {self.gmx_mmpbsa_dir}")
-        print(f"Modo: {'MPI paralelo (%d cores)' % self.n_cores if self.use_mpi else 'Serial'}")
-        print()
+        self.gmx_bin = shutil.which('gmx_mpi') or shutil.which('gmx')
+        
+        if not self.gmx_bin:
+            raise RuntimeError("❌ No se encontró gmx_mpi ni gmx en el sistema.")
+            
+        print(f"✅ GROMACS detectado: {self.gmx_bin}")
+        print("ℹ️  Modo serial forzado para gmx_MMPBSA por compatibilidad con gmx_mpi.")
     
     def detect_groups(self):
         """Detecta grupos del sistema"""
@@ -107,45 +68,33 @@ class GMX_MMPBSA_Analyzer:
         return protein_group, ligand_group
     
     def detect_available_frames(self):
-        """Detecta frames disponibles"""
+        """Detecta frames disponibles - Alineado con GromacsAnalyzer"""
         print("📊 Detectando frames disponibles...")
         
-        traj_file = self.results_dir / 'md_1_center.xtc'
+        traj_file = self.results_dir / 'md_center.xtc'
+            
         if not traj_file.exists():
-            print("   ⚠️  Trayectoria no encontrada, usando 500 por defecto")
+            print(f"   ⚠️  Trayectoria {traj_file.name} no encontrada, usando 500 por defecto")
             return 500
         
         try:
-            cmd = ['gmx', 'check', '-f', str(traj_file)]
+            # MEJORA: Usar self.gmx_bin en lugar de 'gmx_mpi' a secas
+            # Esto usa la ruta completa detectada en el __init__
+            cmd = [self.gmx_bin, 'check', '-f', str(traj_file)]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
-            for line in result.stdout.split('\n') + result.stderr.split('\n'):
-                if 'Last frame' in line:
-                    match = re.search(r'Last frame\s+(\d+)', line)
-                    if match:
-                        n_frames = int(match.group(1))
-                        print(f"   ✅ Frames detectados: {n_frames:,}")
-                        return n_frames
+            output = result.stdout + result.stderr
+            # Buscamos 'Step' seguido de números
+            frames = re.findall(r'Step\s+(\d+)', output)
+            if frames:
+                n_frames = int(frames[-1])
+                print(f"   ✅ Frames detectados: {n_frames:,}")
+                return n_frames
             
-            print("   🔎 Método alternativo...")
-            cmd = ['gmx', 'dump', '-f', str(traj_file)]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            
-            frame_count = result.stdout.count('frame')
-            if frame_count > 0:
-                print(f"   ✅ Frames contados: {frame_count:,}")
-                return frame_count
-            
-            file_size_mb = traj_file.stat().st_size / (1024**2)
-            estimated_frames = int(file_size_mb * 1024 / 20)
-            estimated_frames = max(100, min(estimated_frames, 50000))
-            print(f"   📦 Estimación: {estimated_frames:,} frames")
-            return estimated_frames
+            return 1000 
                 
-        except subprocess.TimeoutExpired:
-            return 1000
         except Exception as e:
-            print(f"   ⚠️  Error: {e}")
+            print(f"   ⚠️  Error detectando frames: {e}")
             return 1000
     
     def find_ligand_files(self):
@@ -269,141 +218,84 @@ class GMX_MMPBSA_Analyzer:
         
         return input_file
     
-    def run_gmx_mmpbsa(self, protein_group: int, ligand_group: int,
-                       use_pb: bool = False, n_frames: int = None) -> bool:
-        """Ejecuta gmx_MMPBSA - OPTIMIZADO PARA PROTEÍNA-PROTEÍNA"""
+    def run_gmx_mmpbsa(self, protein_group: int, ligand_group: int, use_pb: bool = False, n_frames: int = None) -> bool:
+        """Ejecuta gmx_MMPBSA SIEMPRE en modo serial para evitar conflictos de MPI"""
         print("="*70)
-        print("EJECUTANDO gmx_MMPBSA")
+        print("EJECUTANDO gmx_MMPBSA (MODO SERIAL)")
         print("="*70 + "\n")
         
         if n_frames is None:
             n_frames = self.detect_available_frames()
-        
-        # Para proteína-proteína, INTENTAMOS buscar ligando pero sin fallar si no existe
-        mol2_file, frcmod_file = None, None
-        
-        # Intentar encontrar archivos de ligando (para proteína-ligando)
-        try:
-            mol2_file, frcmod_file = self.find_ligand_files()
-        except Exception as e:
-            print(f"⚠️  No se encontraron archivos de ligando: {str(e)[:100]}")
-            print("    Continuando con análisis proteína-proteína puro...")
+
+        mol2_file, frcmod_file = self.find_ligand_files()
         
         local_mol2 = None
-        if mol2_file is None:
-            print("ℹ️  Analizando como proteína-proteína (sin ligando pequeño)")
-            is_protein_protein = True
-        else:
-            print("ℹ️  Analizando como proteína-ligando")
-            is_protein_protein = False
+        if mol2_file:
             local_mol2 = self.gmx_mmpbsa_dir / mol2_file.name
-            try:
-                shutil.copy2(mol2_file, local_mol2)
-            except Exception as e:
-                print(f"⚠️  Error copiando MOL2: {e}")
-                local_mol2 = None
-                is_protein_protein = True
-
-            if frcmod_file and local_mol2:
-                try:
-                    local_frcmod = self.gmx_mmpbsa_dir / frcmod_file.name
-                    shutil.copy2(frcmod_file, local_frcmod)
-                except Exception as e:
-                    print(f"⚠️  Error copiando FRCMOD: {e}")
+            shutil.copy2(mol2_file, local_mol2)
+            if frcmod_file:
+                shutil.copy2(frcmod_file, self.gmx_mmpbsa_dir / frcmod_file.name)
         
-        input_file = self.create_input_file(use_gb=True, use_pb=use_pb, n_frames=n_frames)
+        # Crear archivo de entrada y obtener ruta absoluta
+        input_file_path = self.create_input_file(use_gb=True, use_pb=use_pb, n_frames=n_frames)
+        input_abs = os.path.abspath(input_file_path) 
         
         gmx_mmpbsa_path = shutil.which('gmx_MMPBSA')
-        if not gmx_mmpbsa_path:
-            print("❌ gmx_MMPBSA no encontrado en PATH")
+
+        # Convertir archivos de GROMACS a rutas absolutas
+        tpr_abs = os.path.abspath(self.results_dir / 'md.tpr')
+        ndx_abs = os.path.abspath(self.results_dir / 'index.ndx')
+        xtc_abs = os.path.abspath(self.results_dir / 'md_center.xtc')
+        top_abs = os.path.abspath(self.results_dir / 'topol.top')
+        
+        if not os.path.exists(tpr_abs):
+            print(f"❌ Error: El archivo TPR no existe en: {tpr_abs}")
             return False
-        
-        print(f"🔧 Usando: {gmx_mmpbsa_path}\n")
-        
-        # Comando base (sin MPI primero)
-        base_cmd = [
+
+        # Construcción del comando SERIAL (sin mpirun ni flag MPI)
+        # Nota: gmx_MMPBSA detectará gmx_mpi internamente a través de GMX_BIN
+        cmd_list = [
+            gmx_mmpbsa_path,
             '-O',
-            '-i', str(input_file),
-            '-cs', str(self.results_dir / 'md_1.tpr'),
-            '-ci', str(self.results_dir / 'index.ndx'),
+            '-i', input_abs,  
+            '-cs', tpr_abs,
+            '-ci', ndx_abs,
             '-cg', str(protein_group), str(ligand_group),
-            '-ct', str(self.results_dir / 'md_1_center.xtc'),
+            '-ct', xtc_abs,
+            '-nogui'
         ]
 
-        # Añadir archivo de ligando SOLO si existe (para proteína-ligando)
-        if local_mol2 is not None and local_mol2.exists():
-            base_cmd.extend(['-lm', str(local_mol2)])
+        if local_mol2:
+            cmd_list.extend(['-lm', os.path.abspath(local_mol2)])
         
+        if os.path.exists(top_abs):
+            cmd_list.extend(['-cp', top_abs])
+
+        # Limpiar comando de valores None y asegurar strings
+        cmd = [str(item) for item in cmd_list if item is not None]
         
-        topology = self.results_dir / 'topol.top'
-        if topology.exists():
-            base_cmd.extend(['-cp', str(topology)])
-        
-        # Construcción del comando
-        if self.use_mpi and MPIRUN_PATH.exists():
-            # Modo MPI: mpirun -np N gmx_MMPBSA MPI [args]
-            # Para proteína-proteína, usar solo 1 core por defecto
-            n_cores_to_use = 1 if is_protein_protein else self.n_cores
-            
-            cmd = [
-                str(MPIRUN_PATH),
-                '-np', str(n_cores_to_use),
-                gmx_mmpbsa_path,
-                'MPI'
-            ] + base_cmd
-            
-            actual_mode = f"MPI ({n_cores_to_use} núcleo{'s' if n_cores_to_use > 1 else ''})"
-            print(f"🚀 Modo: {actual_mode}")
-            print(f"   mpirun: {MPIRUN_PATH}")
-            print(f"   Núcleos: {n_cores_to_use}")
-        else:
-            # Modo Serial: gmx_MMPBSA [args]
-            cmd = [gmx_mmpbsa_path] + base_cmd
-            actual_mode = "Serial"
-            print(f"🏃 Modo: {actual_mode}")
-        
-        print(f"\n📝 Comando:")
-        print(f"   {' '.join(cmd)}\n")
-        
-        log_file = self.gmx_mmpbsa_dir / 'gmx_mmpbsa.log'
-        error_file = self.gmx_mmpbsa_dir / 'gmx_mmpbsa.err'
-        
-        print("⏳ Iniciando cálculo...")
-        TIMEOUT_SECONDS = 28800  # 480 minutos
-        print(f"   Timeout: {TIMEOUT_SECONDS // 60} minutos\n")
-        
+        # Inyectar el binario gmx_mpi para que gmx_MMPBSA lo use internamente
+        env = os.environ.copy()
+        env["GMX_BIN"] = self.gmx_bin # Aquí sigue yendo la ruta a gmx_mpi
+
         try:
-            with open(log_file, 'w') as log_out, open(error_file, 'w') as err_out:
-                process = subprocess.run(
-                    cmd,
-                    cwd=str(self.gmx_mmpbsa_dir),
-                    stdout=log_out,
-                    stderr=err_out,
-                    timeout=TIMEOUT_SECONDS,
-                    env=os.environ.copy()
-                )
-            
-            if process.returncode == 0:
-                print(f"\n✅ Cálculo completado ({actual_mode})\n")
-                return True
-            else:
-                print(f"\n❌ Error (código {process.returncode})")
-                print(f"   Logs: {log_file}\n")
-                
-                with open(error_file, 'r') as f:
-                    error_lines = f.readlines()
-                    if error_lines:
-                        print("Últimas líneas del error:")
-                        for line in error_lines[-10:]:
-                            print(f"   {line.rstrip()}")
-                
-                return False
-                
-        except subprocess.TimeoutExpired:
-            print(f"\n❌ Timeout\n")
-            return False
-        except Exception as e:
-            print(f"\n❌ Error: {e}\n")
+            print(f"🚀 Lanzando gmx_MMPBSA en serial usando binario: {self.gmx_bin}")
+            result = subprocess.run(
+                cmd, 
+                cwd=str(self.gmx_mmpbsa_dir), 
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env
+            )
+            print("✅ gmx_MMPBSA finalizó correctamente.")
+            return True
+        except subprocess.CalledProcessError as e:
+            # Capturar errores y guardarlos en log
+            error_msg = e.stderr if e.stderr else e.stdout
+            print(f"❌ Error en gmx_MMPBSA: {error_msg}")
+            with open(self.gmx_mmpbsa_dir / "error_mmpbsa.log", "w") as f:
+                f.write(error_msg)
             return False
     
     def extract_energies(self):
@@ -579,37 +471,3 @@ class GMX_MMPBSA_Analyzer:
         
         return True
 
-
-def main():
-    parser = argparse.ArgumentParser(description='Análisis MM-PBSA/MM-GBSA')
-    parser.add_argument('-d', '--directory', required=True, help='Directorio MD')
-    parser.add_argument('--pb', action='store_true', help='Activar MM-PBSA')
-    parser.add_argument('--mpi', action='store_true', help='Usar MPI')
-    parser.add_argument('--cores', type=int, default=6, help='Número de núcleos')
-    parser.add_argument('--frames', type=int, default=None, help='Número de frames')
-    args = parser.parse_args()
-    
-    if not Path(args.directory).exists():
-        print(f"❌ Directorio no encontrado: {args.directory}")
-        sys.exit(1)
-    
-    use_mpi = args.mpi
-    n_cores = args.cores if use_mpi else None
-    
-    print(f"\n{'='*70}")
-    print("CONFIGURACIÓN:")
-    print(f"{'='*70}")
-    print(f"MPI solicitado: {'Sí' if use_mpi else 'NO'}")
-    print(f"Núcleos: {n_cores if n_cores else 'N/A'}")
-    print(f"Ruta MPI: {MPIRUN_PATH}")
-    print(f"MPI existe: {MPIRUN_PATH.exists()}")
-    print(f"MPI disponible: {MPI_AVAILABLE}")
-    print(f"{'='*70}\n")
-    
-    analyzer = GMX_MMPBSA_Analyzer(args.directory, use_mpi=use_mpi, n_cores=n_cores)
-    success = analyzer.run_analysis(use_pb=args.pb, n_frames=args.frames)
-    sys.exit(0 if success else 1)
-
-
-if __name__ == '__main__':
-    main()

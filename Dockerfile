@@ -4,6 +4,9 @@ FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    # --- NUEVAS VARIABLES PARA MM-PBSA ---
+    OMPI_ALLOW_RUN_AS_ROOT=1 \
+    OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
     # Priorizamos el PATH de Conda para ACPYPE, pero mantenemos GROMACS y CUDA
     PATH=/opt/miniconda/envs/bio/bin:/opt/miniconda/bin:/usr/local/gromacs/bin:/usr/local/bin:/usr/local/cuda/bin:${PATH} \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
@@ -27,6 +30,7 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
 # 4. ENTORNO 'BIO' (Aquí vive ACPYPE y OpenBabel sano)
 RUN /opt/miniconda/bin/conda create -n bio -y --override-channels -c conda-forge \
     python=3.10 \
+    pip \
     ambertools \
     acpype \
     openbabel \
@@ -106,6 +110,16 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.2
 # 8. CONFIGURACIÓN FINAL
 WORKDIR /app/chemlink
 COPY . .
+
+# INSTALAMOS gmx_MMPBSA y dependencias en el entorno 'bio'
+RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir \
+    biopython \
+    numpy \
+    pandas \
+    matplotlib \
+    gmx_MMPBSA 
+
+RUN echo "source /usr/local/gromacs/bin/GMXRC" >> /etc/bash.bashrc
 
 # Dependencias extra para el orquestador
 RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir biopython numpy || true

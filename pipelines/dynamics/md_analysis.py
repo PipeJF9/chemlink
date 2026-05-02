@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple, Optional
 import subprocess
 
 from .dccm_analysis import DCCMAnalyzer
+from .mmpbsa_analysis import GMX_MMPBSA_Analyzer
 
 plt.style.use('seaborn-v0_8-darkgrid')
 COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
@@ -118,12 +119,12 @@ class GromacsAnalyzer:
         print("PASO 8: Análisis de RMSD")
         print("="*80)
         
-        # Obtenemos la carpeta de salida relativa al directorio de trabajo
         out_dir = self.analysis_dirs['rmsd'].relative_to(self.results_dir)
         
-        analyses = [('4\n4\n', 'rmsd_backbone.xvg'), 
-                    ('3\n3\n', 'rmsd_calpha.xvg'), 
-                    ('1\n1\n', 'rmsd_protein.xvg')]
+        # Usamos nombres de grupos estándar en lugar de números
+        analyses = [('Backbone\nBackbone\n', 'rmsd_backbone.xvg'), 
+                    ('C-alpha\nC-alpha\n', 'rmsd_calpha.xvg'), 
+                    ('Protein\nProtein\n', 'rmsd_protein.xvg')]
         
         for sel, out in analyses:
             cmd = [self.gmx_bin, 'rms', 
@@ -135,9 +136,10 @@ class GromacsAnalyzer:
             self._run_gmx_command(cmd, sel)
         
         if self.has_ligand:
-            for sel, out in [('1\n13\n', 'rmsd_ligand_fit_protein.xvg'),
-                             ('13\n13\n', 'rmsd_ligand_fit_self.xvg'),
-                             ('1\n22\n', 'rmsd_complex.xvg')]:
+            # Según tu log: 13 es UNL (Ligando) y 0 es System (Complejo)
+            for sel, out in [('Protein\nUNL\n', 'rmsd_ligand_fit_protein.xvg'),
+                             ('UNL\nUNL\n', 'rmsd_ligand_fit_self.xvg'),
+                             ('Protein\nSystem\n', 'rmsd_complex.xvg')]:
                 cmd = [self.gmx_bin, 'rms', 
                        '-s', 'em.tpr', 
                        '-f', 'md_center.xtc',
@@ -205,6 +207,7 @@ class GromacsAnalyzer:
         
         out_dir = self.analysis_dirs['sasa'].relative_to(self.results_dir)
         
+        # Análisis de la Proteína usando el nombre del grupo
         cmd = [self.gmx_bin, 'sasa', 
                '-f', 'md_center.xtc',
                '-s', 'md.tpr',
@@ -212,53 +215,68 @@ class GromacsAnalyzer:
                '-o', str(out_dir / 'sasa_protein.xvg'),
                '-or', str(out_dir / 'sasa_residue.xvg'),
                '-oa', str(out_dir / 'sasa_atom.xvg')]
-        self._run_gmx_command(cmd, '1\n')
+        self._run_gmx_command(cmd, 'Protein\n')
         
         if self.has_ligand:
-            for sel, out in [('13\n', 'sasa_ligand.xvg'), ('22\n', 'sasa_complex.xvg')]:
+            # Usamos 'sustratos' comunes por nombre para evitar errores de índice
+            for group_name, out in [('Other', 'sasa_ligand.xvg'), ('System', 'sasa_complex.xvg')]:
                 cmd = [self.gmx_bin, 'sasa', 
                        '-f', 'md_center.xtc',
                        '-s', 'md.tpr',
                        '-n', 'index.ndx',
                        '-o', str(out_dir / out)]
-                self._run_gmx_command(cmd, sel)
+                self._run_gmx_command(cmd, f'{group_name}\n')
         
         print("✅ Completado")
     
     def analyze_hbonds_detailed(self):
-        """Análisis DETALLADO de puentes de hidrógeno"""
+        """Análisis DETALLADO de puentes de hidrógeno y contactos"""
         print("\n" + "="*80)
-        print("PASO 12: Análisis DETALLADO de H-bonds")
+        print("PASO 12: Análisis DETALLADO de Interacciones (H-bonds/Contactos)")
         print("="*80)
         
         out_dir = self.analysis_dirs['hbonds'].relative_to(self.results_dir)
         
-        cmd = [self.gmx_bin, 'hbond', 
-               '-f', 'md_center.xtc',
-               '-s', 'md.tpr',
-               '-n', 'index.ndx',
-               '-num', str(out_dir / 'hbond_protein_intra.xvg')]
-        self._run_gmx_command(cmd, '1\n1\n')
+        # H-bonds Intramoleculares (Proteína-Proteína)
+        print("🔗 Analizando H-bonds internos de la proteína...")
+        cmd_intra = [self.gmx_bin, 'hbond', 
+                     '-f', 'md_center.xtc',
+                     '-s', 'md.tpr',
+                     '-n', 'index.ndx',
+                     '-num', str(out_dir / 'hbond_protein_intra.xvg')]
+        self._run_gmx_command(cmd_intra, '1\n1\n')
         
         if self.has_ligand:
-            cmd = [self.gmx_bin, 'hbond', 
-                   '-f', 'md_center.xtc',
-                   '-s', 'md.tpr',
-                   '-n', 'index.ndx',
-                   '-num', str(out_dir / 'hbond_prot_lig.xvg'),
-                   '-dist', str(out_dir / 'hbond_prot_lig_dist.xvg'),
-                   '-ang', str(out_dir / 'hbond_prot_lig_angle.xvg'),
-                   '-hbn', str(out_dir / 'hbond_prot_lig.ndx'),
-                   '-hbm', str(out_dir / 'hbond_matrix.xpm')]
+            # ANÁLISIS DE CONTACTOS (Respaldo por si fallan los H-bonds químicos)
+            print("📏 Midiendo contactos por distancia (corte 0.35nm)...")
+            cmd_pair = [self.gmx_bin, 'pairdist',
+                        '-f', 'md_center.xtc',
+                        '-s', 'md.tpr',
+                        '-n', 'index.ndx',
+                        '-cutoff', '0.35',
+                        '-o', str(out_dir / 'contacts_prot_lig.xvg')]
+            self._run_gmx_command(cmd_pair, '1\n13\n')
+
+            print("🧪 Intentando detectar H-bonds químicos...")
+            cmd_hbond = [self.gmx_bin, 'hbond', 
+                         '-f', 'md_center.xtc',
+                         '-s', 'md.tpr',
+                         '-n', 'index.ndx',
+                         '-num', str(out_dir / 'hbond_prot_lig.xvg'),
+                         '-dist', str(out_dir / 'hbond_prot_lig_dist.xvg'),
+                         '-ang', str(out_dir / 'hbond_prot_lig_angle.xvg')]
             
-            success, _ = self._run_gmx_command(cmd, '1\n13\n')
+            # Usamos try-except interno para que si falla el ligando, el script siga
+            success, _ = self._run_gmx_command(cmd_hbond, '1\n13\n')
             
             if success:
                 self._extract_hbond_residues(self.analysis_dirs['hbonds'])
-            
-            self._convert_hbond_matrix(self.analysis_dirs['hbonds'])
+                self._convert_hbond_matrix(self.analysis_dirs['hbonds'])
+            else:
+                print("⚠️  Nota: No se detectaron H-bonds químicos (falta de donadores/aceptores).")
+                print("✅ Se ha generado 'contacts_prot_lig.xvg' como alternativa de interacción.")
         
-        print("✅ Análisis de H-bonds completado")
+        print("✅ Análisis de interacciones completado")
     
     def _extract_hbond_residues(self, hbonds_dir: Path):
         ndx_file = hbonds_dir / 'hbond_prot_lig.ndx'
@@ -341,7 +359,8 @@ class GromacsAnalyzer:
         print("✅ Todas las gráficas generadas")
     
     def _plot_hbonds_detailed(self, output_dir: Path):
-        """Grafica análisis detallado de H-bonds"""
+        """Grafica análisis detallado de H-bonds (Distancias, Ángulos e Inter/Intra)"""
+        # Solo tiene sentido si hay un ligando (interacción intermolecular)
         if not self.has_ligand:
             return
         
@@ -352,77 +371,84 @@ class GromacsAnalyzer:
             print("  ⚠️  Archivo hbond_prot_lig.xvg no encontrado. Omitiendo gráfica detallada.")
             return
         
+        print("  📈 Generando análisis detallado de H-bonds...")
         try:
+            # Usamos un estilo más limpio y profesional
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
             fig.suptitle('Análisis Detallado de Puentes de Hidrógeno Proteína-Ligando', 
-                        fontsize=14, fontweight='bold')
+                        fontsize=16, fontweight='bold')
             
-            # 1. H-bonds vs tiempo
+            # 1. H-bonds vs tiempo (Evolución temporal)
             data = self._read_xvg(hbond_file)
             if data is not None:
                 axes[0, 0].plot(data[:, 0], data[:, 1], color=COLORS[0], linewidth=1)
-                axes[0, 0].axhline(y=np.mean(data[:, 1]), color='r', linestyle='--',
-                                 label=f'Promedio: {np.mean(data[:, 1]):.1f}')
+                mean_val = np.mean(data[:, 1])
+                axes[0, 0].axhline(y=mean_val, color='r', linestyle='--',
+                                 label=f'Promedio: {mean_val:.2f}')
                 axes[0, 0].set_xlabel('Tiempo (ps)', fontweight='bold')
                 axes[0, 0].set_ylabel('Número de H-bonds', fontweight='bold')
-                axes[0, 0].set_title('H-bonds vs Tiempo', fontweight='bold')
+                axes[0, 0].set_title('Evolución Temporal', fontweight='bold')
                 axes[0, 0].legend()
                 axes[0, 0].grid(True, alpha=0.3)
 
-            # 2. Distancias
+            # 2. Histograma de Distancias
             dist_file = hbonds_dir / 'hbond_prot_lig_dist.xvg'
             if dist_file.exists():
-                data = self._read_xvg(dist_file)
-                if data is not None and data.shape[1] > 1:
-                    distances = data[:, 1:].flatten()
+                data_dist = self._read_xvg(dist_file)
+                if data_dist is not None and data_dist.shape[1] > 1:
+                    # Filtramos ceros (GROMACS pone 0 cuando no existe el enlace en ese frame)
+                    distances = data_dist[:, 1:].flatten()
                     distances = distances[distances > 0]
-                    axes[0, 1].hist(distances, bins=50, color=COLORS[1], alpha=0.7, edgecolor='black')
-                    axes[0, 1].axvline(x=np.mean(distances), color='r', linestyle='--', linewidth=2,
-                                     label=f'Media: {np.mean(distances):.3f} nm')
-                    axes[0, 1].set_xlabel('Distancia (nm)', fontweight='bold')
-                    axes[0, 1].set_ylabel('Frecuencia', fontweight='bold')
-                    axes[0, 1].set_title('Distribución de Distancias H-bond', fontweight='bold')
-                    axes[0, 1].legend()
-                    axes[0, 1].grid(True, alpha=0.3)
+                    if len(distances) > 0:
+                        axes[0, 1].hist(distances, bins=40, color=COLORS[1], alpha=0.7, edgecolor='black')
+                        axes[0, 1].axvline(x=np.mean(distances), color='r', linestyle='--', 
+                                         label=f'Media: {np.mean(distances):.3f} nm')
+                        axes[0, 1].set_xlabel('Distancia (nm)', fontweight='bold')
+                        axes[0, 1].set_ylabel('Frecuencia', fontweight='bold')
+                        axes[0, 1].set_title('Distribución de Distancias', fontweight='bold')
+                        axes[0, 1].legend()
 
-            # 3. Ángulos
+            # 3. Histograma de Ángulos
             angle_file = hbonds_dir / 'hbond_prot_lig_angle.xvg'
             if angle_file.exists():
-                data = self._read_xvg(angle_file)
-                if data is not None and data.shape[1] > 1:
-                    angles = data[:, 1:].flatten()
+                data_angle = self._read_xvg(angle_file)
+                if data_angle is not None and data_angle.shape[1] > 1:
+                    angles = data_angle[:, 1:].flatten()
                     angles = angles[angles > 0]
-                    axes[1, 0].hist(angles, bins=50, color=COLORS[2], alpha=0.7, edgecolor='black')
-                    axes[1, 0].axvline(x=np.mean(angles), color='r', linestyle='--', linewidth=2,
-                                     label=f'Media: {np.mean(angles):.1f}°')
-                    axes[1, 0].set_xlabel('Ángulo (grados)', fontweight='bold')
-                    axes[1, 0].set_ylabel('Frecuencia', fontweight='bold')
-                    axes[1, 0].set_title('Distribución de Ángulos H-bond', fontweight='bold')
-                    axes[1, 0].legend()
-                    axes[1, 0].grid(True, alpha=0.3)
+                    if len(angles) > 0:
+                        axes[1, 0].hist(angles, bins=40, color=COLORS[2], alpha=0.7, edgecolor='black')
+                        axes[1, 0].axvline(x=np.mean(angles), color='r', linestyle='--', 
+                                         label=f'Media: {np.mean(angles):.1f}°')
+                        axes[1, 0].set_xlabel('Ángulo (grados)', fontweight='bold')
+                        axes[1, 0].set_ylabel('Frecuencia', fontweight='bold')
+                        axes[1, 0].set_title('Distribución de Ángulos', fontweight='bold')
+                        axes[1, 0].legend()
 
-            # 4. Comparación Intra vs Inter
-            for filename, label, color in [('hbond_prot_lig.xvg', 'Proteína-Ligando', COLORS[0]),
-                                          ('hbond_protein_intra.xvg', 'Proteína (intra)', COLORS[3])]:
+            # 4. Comparación Intra vs Inter (Proteína sola vs Complejo)
+            found_comp = False
+            for filename, label, color in [('hbond_prot_lig.xvg', 'Inter (Prot-Lig)', COLORS[0]),
+                                          ('hbond_protein_intra.xvg', 'Intra (Proteína)', COLORS[3])]:
                 filepath = hbonds_dir / filename
                 if filepath.exists():
-                    data = self._read_xvg(filepath)
-                    if data is not None:
-                        axes[1, 1].plot(data[:, 0], data[:, 1], label=label, linewidth=1.5, color=color, alpha=0.7)
+                    data_comp = self._read_xvg(filepath)
+                    if data_comp is not None:
+                        axes[1, 1].plot(data_comp[:, 0], data_comp[:, 1], label=label, color=color, alpha=0.6)
+                        found_comp = True
             
-            axes[1, 1].set_xlabel('Tiempo (ps)', fontweight='bold')
-            axes[1, 1].set_ylabel('Número de H-bonds', fontweight='bold')
-            axes[1, 1].set_title('Comparación de H-bonds', fontweight='bold')
-            axes[1, 1].legend()
-            axes[1, 1].grid(True, alpha=0.3)
+            if found_comp:
+                axes[1, 1].set_xlabel('Tiempo (ps)', fontweight='bold')
+                axes[1, 1].set_ylabel('Número de H-bonds', fontweight='bold')
+                axes[1, 1].set_title('Comparación Inter vs Intra', fontweight='bold')
+                axes[1, 1].legend()
             
-            plt.tight_layout()
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             plt.savefig(output_dir / 'hbonds_detailed.png', dpi=300, bbox_inches='tight')
             plt.close()
-            print("  ✅ Gráfica detallada de H-bonds generada.")
+            print("  ✅ Gráfica detallada de H-bonds generada con éxito.")
             
         except Exception as e:
-            print(f"  ⚠️  Error al graficar H-bonds detallados: {e}")
+            print(f"  ⚠️ Error al graficar H-bonds detallados: {e}")
+            if 'fig' in locals(): plt.close()
     
     def _plot_energy_analysis(self, output_dir: Path):
         """Grafica energías"""
@@ -569,35 +595,45 @@ class GromacsAnalyzer:
         try:
             fig, ax = plt.subplots(figsize=(12, 6))
             files = [('hbond_protein_intra.xvg', 'Proteína (intra)', COLORS[0])]
-            if self.has_ligand: files.append(('hbond_prot_lig.xvg', 'Proteína-Ligando', COLORS[1]))
+            if self.has_ligand: 
+                files.append(('hbond_prot_lig.xvg', 'Proteína-Ligando', COLORS[1]))
+            
             found = False
             for filename, label, color in files:
                 filepath = self.analysis_dirs['hbonds'] / filename
                 if filepath.exists():
                     data = self._read_xvg(filepath)
                     if data is not None:
-                        ax.plot(data[:, 0], data[:, 1], label=label, color=color); found = True
+                        ax.plot(data[:, 0], data[:, 1], label=label, color=color)
+                        found = True
+            
             if found:
-                ax.set_xlabel('Tiempo (ps)'); ax.set_ylabel('Número de H-bonds'); ax.legend(); ax.grid(True, alpha=0.3)
-                plt.savefig(output_dir / 'hbonds_tiempo.png', dpi=300); print("  ✅ H-bonds graficado.")
+                ax.set_xlabel('Tiempo (ps)')
+                ax.set_ylabel('Número de H-bonds')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                plt.savefig(output_dir / 'hbonds_tiempo.png', dpi=300)
+                print("  ✅ H-bonds graficado.")
             plt.close()
-        except Exception as e: print(f"  ⚠️ Error en H-bonds: {e}")
+        except Exception as e: 
+            print(f"  ⚠️ Error en H-bonds: {e}")
     
     def _create_dashboard(self, output_dir: Path):
         """Dashboard resumen"""
         print("  📊 Creando dashboard...")
-        
         try:
             fig = plt.figure(figsize=(20, 12))
             gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
             
-            plots = [(gs[0, 0], 'rmsd', 'rmsd_backbone.xvg', 'RMSD Backbone', 'Tiempo (ns)', 'RMSD (nm)'),
-                    (gs[0, 1], 'energia', 'energy_potential.xvg', 'Energía Potencial', 'Tiempo (ps)', 'Energía (kJ/mol)'),
-                    (gs[0, 2], 'energia', 'temperature_md.xvg', 'Temperatura', 'Tiempo (ps)', 'Temperatura (K)'),
-                    (gs[1, 0], 'estructural', 'gyrate_protein.xvg', 'Radio de Giro', 'Tiempo (ps)', 'Rg (nm)'),
-                    (gs[1, 1], 'sasa', 'sasa_protein.xvg', 'SASA', 'Tiempo (ps)', 'SASA (nm²)'),
-                    (gs[1, 2], 'hbonds', 'hbond_protein_intra.xvg', 'H-bonds Intramoleculares', 'Tiempo (ps)', 'Número'),
-                    (gs[2, 2], 'energia', 'density.xvg', 'Densidad', 'Tiempo (ps)', 'kg/m³')]
+            plots = [
+                (gs[0, 0], 'rmsd', 'rmsd_backbone.xvg', 'RMSD Backbone', 'Tiempo (ns)', 'RMSD (nm)'),
+                (gs[0, 1], 'energia', 'energy_potential.xvg', 'Energía Potencial', 'Tiempo (ps)', 'Energía (kJ/mol)'),
+                (gs[0, 2], 'energia', 'temperature_md.xvg', 'Temperatura', 'Tiempo (ps)', 'Temperatura (K)'),
+                (gs[1, 0], 'estructural', 'gyrate_protein.xvg', 'Radio de Giro', 'Tiempo (ps)', 'Rg (nm)'),
+                (gs[1, 1], 'sasa', 'sasa_protein.xvg', 'SASA', 'Tiempo (ps)', 'SASA (nm²)'),
+                (gs[1, 2], 'hbonds', 'hbond_protein_intra.xvg', 'H-bonds Intramoleculares', 'Tiempo (ps)', 'Número'),
+                (gs[2, 2], 'energia', 'density.xvg', 'Densidad', 'Tiempo (ps)', 'kg/m³')
+            ]
             
             for pos, dir_key, filename, title, xlabel, ylabel in plots:
                 ax = fig.add_subplot(pos)
@@ -614,7 +650,6 @@ class GromacsAnalyzer:
                 else:
                     ax.text(0.5, 0.5, f'No encontrado:\n{filename}', ha='center', va='center', fontsize=8, color='gray')
             
-            # Gráfico de RMSF (ocupa dos columnas abajo)
             ax_rmsf = fig.add_subplot(gs[2, :2])
             rmsf_path = self.analysis_dirs['rmsf'] / 'rmsf_calpha.xvg'
             if rmsf_path.exists():
@@ -644,7 +679,6 @@ class GromacsAnalyzer:
                  f"Directorio: {self.results_dir}", ""]
         
         def add_stats(title, key, filename, unit=''):
-            # CAMBIO CLAVE: Buscamos usando el diccionario analysis_dirs configurado en __init__
             filepath = self.analysis_dirs[key] / filename
             if filepath.exists():
                 data = self._read_xvg(filepath)
@@ -658,7 +692,6 @@ class GromacsAnalyzer:
             else:
                 report.extend([f"{title}: Archivo no encontrado", ""])
         
-        # Mapeo corregido: (Título, Key del diccionario, nombre del archivo, unidad)
         sections = [
             ("1. ANÁLISIS DE RMSD", [
                 ("RMSD Backbone", 'rmsd', 'rmsd_backbone.xvg', 'nm'),
@@ -846,11 +879,14 @@ class GromacsAnalyzer:
                 print(f"\n✅ DCCM COMPLETADO: Resultados en {dccm_parent.name}/analisis_dccm")
             else:
                 print("\n⚠️  DCCM finalizó con advertencias (verificar logs de GROMACS).")
-                
+            
+            
         except Exception as e:
             print(f"\n❌ Error crítico en la orquestación DCCM: {e}")
             import traceback
             print(traceback.format_exc()) 
+        
+        self.run_mmpbsa_analysis_automatically()
 
     def run_mmpbsa_analysis_automatically(self):
         """Ejecuta automáticamente el análisis MM-PBSA/MM-GBSA sin preguntar"""
@@ -858,53 +894,32 @@ class GromacsAnalyzer:
         print("🧪 INICIANDO ANÁLISIS MM-PBSA/MM-GBSA AUTOMÁTICAMENTE")
         print("="*80)
         
-        # CAMBIO: Permitir el análisis si hay ligando O si es un complejo Proteína-Proteína
+        # Validación de compatibilidad del sistema
         if not (self.has_ligand or self.is_protein_protein):
             print("\n⚠️  Sistema incompatible detectado")
             print("    El análisis MM-PBSA requiere un complejo (Prot-Lig o Prot-Prot)")
             print("    Omitiendo este análisis...")
             return
-        
-        mmpbsa_script_locations = [
-            Path("/home/ChemFusion/funciones/mmpbsa_analysis.py"),
-            self.results_dir.parent / "mmpbsa_analysis.py",
-            Path(__file__).parent / "mmpbsa_analysis.py",
-        ]
-        
-        mmpbsa_script = None
-        for location in mmpbsa_script_locations:
-            if location.exists():
-                mmpbsa_script = location
-                print(f"✅ Script MM-PBSA/MM-GBSA encontrado: {mmpbsa_script}")
-                break
-        
-        if mmpbsa_script is None:
-            print("⚠️  Script mmpbsa_analysis.py no encontrado")
-            return
-        
+
+        # Verificación de archivos requeridos en results_dir
         required_files = ['md_center.xtc', 'md.tpr', 'index.ndx']
         missing_files = [f for f in required_files if not (self.results_dir / f).exists()]
         
         if missing_files:
-            print(f"⚠️  Archivos requeridos faltantes: {', '.join(missing_files)}")
+            print(f"⚠️  Archivos requeridos faltantes en {self.results_dir.name}: {', '.join(missing_files)}")
             return
         
         try:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("mmpbsa_analysis", mmpbsa_script)
-            mmpbsa_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mmpbsa_module)
-            
             print(f"\n📊 Ejecutando análisis para tipo: {'Prot-Lig' if self.has_ligand else 'Prot-Prot'}...")
             
-            # Instanciación del módulo externo
-            mmpbsa_analyzer = mmpbsa_module.GMX_MMPBSA_Analyzer(
+            # Instanciación directa 
+            mmpbsa_analyzer = GMX_MMPBSA_Analyzer(
                 results_dir=str(self.results_dir),
                 use_mpi=True,
                 n_cores=6
             )
             
-            # Ejecución
+            # Ejecución del motor de cálculo
             success = mmpbsa_analyzer.run_analysis(use_pb=True)
             
             if success:

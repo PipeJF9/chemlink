@@ -15,7 +15,8 @@ class AnalysisStep:
         self.base_path = "pipeline/dynamics"
         self.mmpbsa_pp_ligand = os.path.join(self.base_path, "run_mmpbsa_for_pp_with_ligand.py")
         self.mmpbsa_peptide = os.path.join(self.base_path, "run_mmpbsa_for_peptide.py")
-        self.mmpbsa_ligand = os.path.join(self.base_path, "mmpbsa_analysis.py")
+        
+        #self.mmpbsa_ligand = os.path.join(self.base_path, "mmpbsa_analysis.py")
 
     def run(self):
         print("\n" + "="*65)
@@ -26,14 +27,15 @@ class AnalysisStep:
         # Este script genera RMSD, RMSF, Radios de Giro, SASA, etc.
         self._run_general_analysis()
 
-        # 2. ANÁLISIS DE ENERGÍA DE BINDING (MM-PBSA)
+        
         sim_type = self.config["sim_type"]
-        if sim_type == "2":
-            print("\n[*] Configuración: Proteína + Ligando")
-            print("    -> Iniciando MM-PBSA para molécula pequeña...")
+        #if sim_type == "2":
+            #print("\n[*] Configuración: Proteína + Ligando")
+            #print("    -> Iniciando MM-PBSA para molécula pequeña...")
             #self._execute_mmpbsa(self.mmpbsa_ligand, "Proteína-Ligando")
 
-        elif sim_type == "5" or sim_type == "3":
+        # 2. ANÁLISIS DE ENERGÍA DE BINDING (MM-PBSA)
+        if sim_type == "5" or sim_type == "3":
             print("\n[*] Configuración: Complejo de Proteína + (Proteína/Péptido)")
             print("    -> Iniciando MM-PBSA para interacción P-P...")
             #self._execute_mmpbsa(self.mmpbsa_peptide, "Proteína-Proteína")
