@@ -22,7 +22,9 @@ def _run(args) -> int:
 	print(f"  Ligands analyzed: {results['analyzed_ligands']}")
 	
 	print("\nOutput files generated:")
-	for name, path in results['outputs'].items():
-		print(f"  • {name}")
+	for name, path in results.get('outputs', {}).items():
+		print(f"  • {name}: {path}")
+	if not results.get('outputs'):
+		print("  (none) No DLG files were found under <output_dir>/ResultadosDocking/**/dlg/*.dlg")
 	
 	return 0

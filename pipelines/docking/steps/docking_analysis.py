@@ -6,10 +6,11 @@ import os
 import re
 import statistics
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from ....storage.file_manager import create_folder
@@ -51,17 +52,18 @@ class DockingLigandStats:
 class DockingAnalysis:
 	"""Analyze AutoDock-GPU docking outputs with comprehensive statistical analysis."""
 
-	def __init__(self, output_path: str, pdb_export_limit: int = 10):
+	def __init__(self, output_path: str, pdb_export_limit: int = 10, max_workers: int = 4):
 		self.output_path = output_path
-		self.results_dir = os.path.join(self.output_path, "ResultadosDocking")
-		self.analysis_dir = os.path.join(self.output_path, "AnalisisDocking")
+		self.results_dir = os.path.join(self.output_path, "docking_results")
+		self.analysis_dir = os.path.join(self.output_path, "docking_analisis")
 		self.summary_txt = os.path.join(self.analysis_dir, "docking_analysis_summary.txt")
 		self.summary_csv = os.path.join(self.analysis_dir, "docking_statistics.csv")
-		self.legacy_csv = os.path.join(self.analysis_dir, "Estadisticas_Completas.csv")
+		self.legacy_csv = os.path.join(self.analysis_dir, "statistics.csv")
 		self.summary_md = os.path.join(self.analysis_dir, "docking_analysis_report.md")
 		self.ranking_csv = os.path.join(self.analysis_dir, "ligand_ranking.csv")
 		self.dynamics_candidates_csv = os.path.join(self.analysis_dir, "dynamics_candidates.csv")
 		self.pdb_export_limit = max(0, pdb_export_limit)
+		self.max_workers = max(1, max_workers)
 
 	@staticmethod
 	def _parse_float(value: str) -> Optional[float]:
@@ -185,10 +187,20 @@ class DockingAnalysis:
 			return None
 
 	def _collect_all_poses(self) -> List[DockingPose]:
-		"""Collect every pose from all DLG files in the results tree."""
+		"""Collect every pose from every DLG reachable from the provided base path."""
 		all_poses: List[DockingPose] = []
-		dlg_files = glob.glob(os.path.join(self.results_dir, "**", "dlg", "*.dlg"), recursive=True)
-		logger.info("Found %d DLG files to analyze", len(dlg_files))
+		search_roots = []
+		for candidate_root in (self.output_path, self.results_dir):
+			if candidate_root and os.path.isdir(candidate_root) and candidate_root not in search_roots:
+				search_roots.append(candidate_root)
+
+		dlg_files: List[str] = []
+		for root in search_roots:
+			dlg_files.extend(glob.glob(os.path.join(root, "**", "*.dlg"), recursive=True))
+
+		# Keep only unique files while preserving order.
+		dlg_files = list(dict.fromkeys(dlg_files))
+		logger.info("Found %d DLG files to analyze under %s", len(dlg_files), ", ".join(search_roots) if search_roots else self.output_path)
 
 		for dlg_path in dlg_files:
 			poses = self._parse_dlg(dlg_path)
@@ -397,41 +409,49 @@ class DockingAnalysis:
 				})
 
 	def _export_best_candidate_pdbs(self, stats: List[DockingLigandStats], top_n: int = 10) -> None:
-		"""Export PDBs only for the top ranked candidates.
+		"""Export PDBs only for the top ranked candidates using parallel threads (I/O-bound).
 
 		This keeps the analysis fast and limits file generation to the ligands that
-		actually matter for the next dynamics step.
+		actually matter for the next dynamics step. Uses ThreadPoolExecutor to extract
+		and write PDBs in parallel (I/O-bound operations benefit from concurrency).
 		"""
 		ranked = sorted(stats, key=lambda s: (s.mean_affinity, s.best_affinity))[:top_n]
 		pdb_dir = os.path.join(self.analysis_dir, "poses_for_md")
 		create_folder(pdb_dir)
 		stats_by_key = {(s.protein, s.ligand, s.dlg_file): s for s in stats}
 
-		for stat in ranked:
+		# Parallel export of PDBs using ThreadPoolExecutor (I/O-bound task)
+		def _export_single_pdb_task(stat: DockingLigandStats) -> Tuple[Tuple[str, str, str], Optional[str]]:
+			"""Helper: export PDB for a single ligand. Returns (key, pdb_path)."""
 			coords = self._extract_pose_coords(stat.dlg_file, stat.best_run)
 			if coords is None:
-				continue
+				return (stat.protein, stat.ligand, stat.dlg_file), None
 			pdb_name = f"{stat.protein}_{stat.ligand}_best_run_{stat.best_run}.pdb"
 			pdb_path = os.path.join(pdb_dir, pdb_name)
 			self._write_pose_pdb(coords, pdb_path, stat.ligand)
-			key = (stat.protein, stat.ligand, stat.dlg_file)
-			if key in stats_by_key:
-				updated = stats_by_key[key]
-				stats_by_key[key] = DockingLigandStats(
-					protein=updated.protein,
-					ligand=updated.ligand,
-					num_poses=updated.num_poses,
-					best_run=updated.best_run,
-					best_affinity=updated.best_affinity,
-					worst_affinity=updated.worst_affinity,
-					mean_affinity=updated.mean_affinity,
-					std_affinity=updated.std_affinity,
-					dlg_file=updated.dlg_file,
-					mean_rmsd=updated.mean_rmsd,
-					std_rmsd=updated.std_rmsd,
-					qc_flag=updated.qc_flag,
-					best_pose_pdb=pdb_path,
-				)
+			return (stat.protein, stat.ligand, stat.dlg_file), pdb_path
+
+		with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+			futures = [executor.submit(_export_single_pdb_task, stat) for stat in ranked]
+			for future in futures:
+				key, pdb_path = future.result()
+				if key in stats_by_key and pdb_path is not None:
+					updated = stats_by_key[key]
+					stats_by_key[key] = DockingLigandStats(
+						protein=updated.protein,
+						ligand=updated.ligand,
+						num_poses=updated.num_poses,
+						best_run=updated.best_run,
+						best_affinity=updated.best_affinity,
+						worst_affinity=updated.worst_affinity,
+						mean_affinity=updated.mean_affinity,
+						std_affinity=updated.std_affinity,
+						dlg_file=updated.dlg_file,
+						mean_rmsd=updated.mean_rmsd,
+						std_rmsd=updated.std_rmsd,
+						qc_flag=updated.qc_flag,
+						best_pose_pdb=pdb_path,
+					)
 
 		# Persist the updated best_pose_pdb values back into the original list order.
 		for index, stat in enumerate(stats):
@@ -547,7 +567,7 @@ class DockingAnalysis:
 		# Collect and parse all poses
 		all_poses = self._collect_all_poses()
 		if not all_poses:
-			logger.warning("No DLG files or poses found for analysis in %s", self.results_dir)
+			logger.warning("No DLG files or poses found for analysis under %s", self.output_path)
 			return {"parsed_poses": 0, "analyzed_ligands": 0}
 
 		logger.info("Parsed %d poses from DLG files", len(all_poses))

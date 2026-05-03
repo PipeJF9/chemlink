@@ -73,7 +73,7 @@ class DockingExecution:
 		self.nev = nev
 		self.timeout_seconds = timeout_seconds
 
-		self.results_dir = os.path.join(self.output_path, "ResultadosDocking")
+		self.results_dir = os.path.join(self.output_path, "docking_results")
 		self.temp_dir = os.path.join(self.results_dir, "temp")
 		self.log_file = os.path.join(self.output_path, "docking_molecular.log")
 		self.config_file = os.path.join(self.output_path, "docking_config.txt")
@@ -256,7 +256,7 @@ class DockingExecution:
 			gpu_ids = [int(gpu_id) for gpu_id in gpu_ids]
 
 		if n_workers is None:
-			n_workers = cpu_count()
+			n_workers = 1
 		if gpu_ids:
 			n_workers = len(gpu_ids)
 		n_workers = max(1, min(n_workers, len(jobs)))

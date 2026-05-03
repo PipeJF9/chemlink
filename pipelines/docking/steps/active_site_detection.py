@@ -92,8 +92,8 @@ class ActiveSiteDetection:
 			if any(value <= 0 for value in self.manual_npts):
 				raise ValueError("manual_npts values must be > 0")
 
-		self.pocket_folder = os.path.join(self.output_path, "pdbBoxes")
-		self.dimensions_folder = os.path.join(self.output_path, "dimensionsBoxes")
+		self.pocket_folder = os.path.join(self.output_path, "pdb_boxes")
+		self.dimensions_folder = os.path.join(self.output_path, "dimensions_boxes")
 
 		self.mgltools_python = os.path.join(self.mgltools_path, "bin", "pythonsh")
 

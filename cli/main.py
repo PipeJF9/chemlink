@@ -16,6 +16,7 @@ DEFAULT_LIGAND_INPUT_DIR = "data/input/ligands"
 DEFAULT_OUTPUT_DIR = "data/output"
 DEFAULT_PREPARED_RECEPTORS_DIR = f"{DEFAULT_OUTPUT_DIR}/prepared_receptors_pdbqt"
 DEFAULT_PREPARED_LIGANDS_DIR = f"{DEFAULT_OUTPUT_DIR}/prepared_ligands_pdbqt"
+PIPELINE_STEP_CHOICES = ("receptor", "ligand", "active-site", "execution", "analysis")
 
 
 def _manual_params(args: Namespace) -> Tuple[Optional[Tuple[float, float, float]], Optional[Tuple[int, int, int]]]:
@@ -112,14 +113,63 @@ def _run_docking_analysis(args: Namespace) -> int:
 	except ImportError:
 		from chemlink.pipelines.docking.steps import DockingAnalysis  # type: ignore
 
-	step = DockingAnalysis(output_path=args.output_dir, pdb_export_limit=args.pdb_export_limit)
+	step = DockingAnalysis(output_path=args.output_dir, pdb_export_limit=args.pdb_export_limit, max_workers=args.max_workers)
 	results = step.run()
 	print("\nFinal Statistics:")
 	print(f"  Poses analyzed: {results['parsed_poses']}")
 	print(f"  Ligands analyzed: {results['analyzed_ligands']}")
-	print("\nOutput files:")
-	for report_name, report_path in results['outputs'].items():
-		print(f"  • {report_name}: {report_path}")
+	outputs = results.get("outputs", {})
+	if outputs:
+		print("\nOutput files:")
+		for report_name, report_path in outputs.items():
+			print(f"  • {report_name}: {report_path}")
+	else:
+		print("\nOutput files: none (no DLG files were found under <output_dir>/ResultadosDocking/**/dlg/*.dlg)")
+	return 0
+
+
+def _run_docking_flow(args: Namespace) -> int:
+	try:
+		from ..pipelines.docking import DockingPipeline
+	except ImportError:
+		from chemlink.pipelines.docking import DockingPipeline  # type: ignore
+
+	manual_center, manual_npts = _manual_params(args)
+	pipeline = DockingPipeline(
+		receptor_input_path=args.receptor_input_dir,
+		ligand_input_path=args.ligand_input_dir,
+		output_path=args.output_dir,
+		mgltools_path=args.mgltools_path,
+		fpocket_path=args.fpocket_path,
+		manual_center=manual_center,
+		manual_npts=manual_npts,
+	)
+
+	result = pipeline.run_step_range(
+		from_step=args.from_step,
+		to_step=args.to_step,
+		receptor_workers=args.receptor_workers,
+		ligand_workers=args.ligand_workers,
+		active_site_workers=args.active_site_workers,
+		docking_workers=args.docking_workers,
+		autogrid_executable=args.autogrid_executable,
+		autodock_gpu_executable=args.autodock_gpu_executable,
+		pdb_export_limit=args.pdb_export_limit,
+		max_workers=args.max_workers,
+	)
+
+	print("\nFinal Statistics:")
+	print(f"  Executed steps: {', '.join(result.executed_steps)}")
+	if "receptor" in result.executed_steps:
+		print(f"  Receptors: {result.receptor_preparation}")
+	if "ligand" in result.executed_steps:
+		print(f"  Ligands: {result.ligand_preparation}")
+	if "active-site" in result.executed_steps:
+		print(f"  Active sites: {result.active_site_detection}")
+	if "execution" in result.executed_steps and result.docking_execution is not None:
+		print(f"  Docking execution: {result.docking_execution}")
+	if "analysis" in result.executed_steps and result.docking_analysis is not None:
+		print(f"  Docking analysis: {result.docking_analysis}")
 	return 0
 
 
@@ -209,6 +259,22 @@ def _add_pipeline_full_only_args(parser: ArgumentParser) -> None:
 	parser.add_argument("--autogrid-executable", "--autogrid", dest="autogrid_executable", default=None, help="AutoGrid4 executable")
 	parser.add_argument("--autodock-gpu-executable", "--autodock", dest="autodock_gpu_executable", default=None, help="AutoDock-GPU executable")
 	parser.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
+	parser.add_argument("--max-workers", type=int, default=4, help="Max parallel threads for PDB export (default: 4)")
+
+
+def _add_pipeline_step_range_args(parser: ArgumentParser) -> None:
+	parser.add_argument(
+		"--from-step",
+		choices=PIPELINE_STEP_CHOICES,
+		default="receptor",
+		help="First step to execute (default: receptor)",
+	)
+	parser.add_argument(
+		"--to-step",
+		choices=PIPELINE_STEP_CHOICES,
+		default="analysis",
+		help="Last step to execute (default: analysis)",
+	)
 
 
 def _register_legacy_commands(subparsers) -> None:
@@ -253,7 +319,14 @@ def _register_legacy_commands(subparsers) -> None:
 	analysis = subparsers.add_parser("docking-analysis", help="Analyze docking DLG files and generate reports")
 	analysis.add_argument("output_dir", help="Base output directory")
 	analysis.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
+	analysis.add_argument("--max-workers", type=int, default=4, help="Max parallel threads for PDB export (default: 4)")
 	analysis.set_defaults(handler=_run_docking_analysis)
+
+	flow = subparsers.add_parser("docking-flow", help="Run any contiguous subset of the docking pipeline")
+	_add_pipeline_common_args(flow)
+	_add_pipeline_full_only_args(flow)
+	_add_pipeline_step_range_args(flow)
+	flow.set_defaults(handler=_run_docking_flow)
 
 	# docking-pipeline (legacy flat command)
 	pipeline = subparsers.add_parser("docking-pipeline", help="Run full pipeline (legacy flat command)")
@@ -275,6 +348,12 @@ def _register_grouped_commands(subparsers) -> None:
 	_add_pipeline_common_args(full)
 	_add_pipeline_full_only_args(full)
 	full.set_defaults(handler=_run_docking_full)
+
+	flow = docking_sub.add_parser("flow", help="Run any contiguous subset of the docking pipeline")
+	_add_pipeline_common_args(flow)
+	_add_pipeline_full_only_args(flow)
+	_add_pipeline_step_range_args(flow)
+	flow.set_defaults(handler=_run_docking_flow)
 
 	run = docking_sub.add_parser("run", help="Run docking execution on prepared files")
 	run.add_argument(
@@ -303,6 +382,7 @@ def _register_grouped_commands(subparsers) -> None:
 	analyze = docking_sub.add_parser("analyze", aliases=["analysis"], help="Analyze generated DLG results")
 	analyze.add_argument("output_dir", help="Base output directory")
 	analyze.add_argument("--pdb-export-limit", type=int, default=10, help="Number of top candidates to export as PDB (default: 10)")
+	analyze.add_argument("--max-workers", type=int, default=4, help="Max parallel threads for PDB export (default: 4)")
 	analyze.set_defaults(handler=_run_docking_analysis)
 
 
