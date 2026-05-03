@@ -34,6 +34,7 @@ RUN /opt/miniconda/bin/conda create -n bio -y --override-channels -c conda-forge
     ambertools \
     acpype \
     openbabel \
+    pdbfixer \
     rdkit \
     tqdm \
     pandas \

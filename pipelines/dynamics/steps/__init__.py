@@ -7,8 +7,10 @@ from .production import ProductionStep
 from .post_processing import PostProcessingStep
 from .ligand_topology import LigandTopologyStep
 from .analysis import AnalysisStep
+from .complex_builder import ComplexBuilderStep
 
 __all__ = [
+    "ComplexBuilderStep",
     "TopologyStep",
     "SolvationStep",
     "IonsStep",

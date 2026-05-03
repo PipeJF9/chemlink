@@ -2,7 +2,7 @@ import os
 
 from pipelines.dynamics.steps.ligand_topology import LigandTopologyStep
 from .utils import check_gmx_installation
-from .steps import TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep, AnalysisStep
+from .steps import ComplexBuilderStep,TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep, AnalysisStep
 
 class DynamicsPipeline:
     def __init__(self, config):
@@ -23,6 +23,12 @@ class DynamicsPipeline:
 
         try:
             #'''
+            # 0. Unificación de archivos de entrada
+            if self.config["sim_type"] in ["3", "4", "5"]:
+                print("\n[*] Paso 0: Preparando complejo...")
+                comp = ComplexBuilderStep(self.config)
+                comp.run()
+
             # 1. Ejecutar Paso 1: Topología
             print("\n[Paso 1/6] Generando Topología...")
             topo = TopologyStep(self.config, self.gmx_bin)

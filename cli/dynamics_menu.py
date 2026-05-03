@@ -9,16 +9,16 @@ def run_dynamics_menu():
     print("\nTIPO DE SIMULACIÓN:")
     print("  1) Proteína sola")
     print("  2) Proteína con ligando pequeño (molécula orgánica)")
-    print("  3) Proteína con péptido [Próximamente]")
+    print("  3) Proteína con péptido")
     print("  4) Proteína con ácido nucleico (DNA/RNA) [Próximamente]")
-    print("  5) Proteína con otra proteína (complejo) [Próximamente]")
+    print("  5) Proteína con otra proteína (complejo)")
     print("  6) Proteína + proteína + cofactor/molécula pequeña")
     print("  7) salir")
 
     sim_type = input("\n➤ Ingrese una opción (1-7): ")
     if sim_type == "7":
         return
-    elif sim_type != "1" and sim_type != "2" and sim_type != "5":
+    elif sim_type != "1" and sim_type != "2" and sim_type != "3" and sim_type != "5":
         return
     
     # 2. PEDIR TIEMPO DE SIMULACIÓN
@@ -54,11 +54,21 @@ def run_dynamics_menu():
         prot_file = input("➤ PDB de la PROTEÍNA (sin extensión): ")
         lig_file = input("➤ PDB del LIGANDO (sin extensión): ")
         config["pdb_input"] = f"data/input/dynamics/{prot_file}.pdb"
-        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}"
+        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}.pdb"
         config["ligand_charge"] = int(input("➤ Carga neta del ligando (ej: 0): "))
-    elif sim_type == "5":
-        pdb_complex = input("➤ Nombre del PDB del COMPLEJO (sin extension): ")
-        config["pdb_input"] = f"data/input/dynamics/{pdb_complex}.pdb"
+
+    elif sim_type in ["3", "4", "5"]:
+        label_map = {"3": "PÉPTIDO", "4": "ÁCIDO NUCLEICO", "5": "PROTEÍNA Secundaria"}
+        label = label_map[sim_type]
+        
+        prot_file = input("➤ PDB de la PROTEÍNA principal (sin extensión): ")
+        partner_file = input(f"➤ PDB del {label} (sin extensión): ")
+        
+        config["pdb_protein"] = f"data/input/dynamics/{prot_file}.pdb"
+        config["pdb_partner"] = f"data/input/dynamics/{partner_file}.pdb"
+
+        config["pdb_input"] = os.path.join(config["work_dir"], "complex.pdb")
+        
     else:
         pdb_file = input("➤ Nombre del PDB (sin extensión): ")
         config["pdb_input"] = f"data/input/dynamics/{pdb_file}.pdb"

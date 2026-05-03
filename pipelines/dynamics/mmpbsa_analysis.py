@@ -100,7 +100,7 @@ class GMX_MMPBSA_Analyzer:
         acpype_subdirs = list(acpype_dir.glob('*.acpype')) if acpype_dir.exists() else []
         
         if not acpype_subdirs:
-            print(f"❌ Directorio ACPYPE no encontrado - proteína-proteína sin ligando pequeño")
+            print(f"❌ Directorio ACPYPE no encontrado - proteína-proteína sin ligando o fallo en generación de parámetros")
             return None, None
         
         acpype_dir = acpype_subdirs[0]
