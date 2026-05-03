@@ -22,7 +22,7 @@ class DynamicsPipeline:
         print("="*50)
 
         try:
-            '''
+            #'''
             # 1. Ejecutar Paso 1: Topología
             print("\n[Paso 1/6] Generando Topología...")
             topo = TopologyStep(self.config, self.gmx_bin)
@@ -67,7 +67,7 @@ class DynamicsPipeline:
             print("\n[Paso 7/7] Post-procesando resultados...")
             post_proc = PostProcessingStep(self.config, self.gmx_bin)
             post_proc.run()
-'''
+            #'''
             # 8. Ejecutar Paso 8: Análisis
             print("\n[Paso 8/8] Analizando resultados...")
             analysis = AnalysisStep(self.config, self.gmx_bin)
