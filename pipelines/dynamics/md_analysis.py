@@ -121,34 +121,43 @@ class GromacsAnalyzer:
         
         out_dir = self.analysis_dirs['rmsd'].relative_to(self.results_dir)
         
-        # Usamos nombres de grupos estándar en lugar de números
-        analyses = [('Backbone\nBackbone\n', 'rmsd_backbone.xvg'), 
-                    ('C-alpha\nC-alpha\n', 'rmsd_calpha.xvg'), 
-                    ('Protein\nProtein\n', 'rmsd_protein.xvg')]
-        
-        for sel, out in analyses:
-            cmd = [self.gmx_bin, 'rms', 
-                   '-s', 'em.tpr',            
-                   '-f', 'md_center.xtc',     
-                   '-n', 'index.ndx',         
-                   '-tu', 'ns', 
-                   '-o', str(out_dir / out)]  
-            self._run_gmx_command(cmd, sel)
-        
+        # 1. RMSD Backbone (Fit: Backbone [4], Cálculo: Backbone [4])
+        cmd_bb = [self.gmx_bin, 'rms', '-s', 'em.tpr', '-f', 'md_center.xtc', 
+                '-n', 'index.ndx', '-tu', 'ns', '-o', str(out_dir / 'rmsd_backbone.xvg')]
+        self._run_gmx_command(cmd_bb, "4\n4\n")
+
+        # 2. RMSD C-alpha (Fit: C-alpha [3], Cálculo: C-alpha [3])
+        cmd_ca = [self.gmx_bin, 'rms', '-s', 'em.tpr', '-f', 'md_center.xtc', 
+                '-n', 'index.ndx', '-tu', 'ns', '-o', str(out_dir / 'rmsd_calpha.xvg')]
+        self._run_gmx_command(cmd_ca, "3\n3\n")
+
+        # 3. RMSD Proteína Completa (Fit: Protein [1], Cálculo: Protein [1])
+        cmd_prot = [self.gmx_bin, 'rms', '-s', 'em.tpr', '-f', 'md_center.xtc', 
+                    '-n', 'index.ndx', '-tu', 'ns', '-o', str(out_dir / 'rmsd_protein.xvg')]
+        self._run_gmx_command(cmd_prot, "1\n1\n")
+
+        # 4. SOPORTE ESPECÍFICO PARA DNA (Opción 4)
+        if str(self.sim_type) == "4":
+            print("🧬 Analizando estabilidad del Ácido Nucleico...")
+            
+            # RMSD propio del DNA (Fit: DNA [12], Cálculo: DNA [12])
+            cmd_dna = [self.gmx_bin, 'rms', '-s', 'em.tpr', '-f', 'md_center.xtc', 
+                    '-n', 'index.ndx', '-tu', 'ns', '-o', str(out_dir / 'rmsd_dna.xvg')]
+            self._run_gmx_command(cmd_dna, "12\n12\n")
+
+            # RMSD del DNA respecto a la Proteína (Fit: Proteína [1], Cálculo: DNA [12])
+            # Esto es vital para ver si el DNA se desplaza del sitio de unión
+            cmd_dna_fit = [self.gmx_bin, 'rms', '-s', 'em.tpr', '-f', 'md_center.xtc', 
+                        '-n', 'index.ndx', '-tu', 'ns', '-o', str(out_dir / 'rmsd_dna_fit_prot.xvg')]
+            self._run_gmx_command(cmd_dna_fit, "1\n12\n")
+
         if self.has_ligand:
-            # Según tu log: 13 es UNL (Ligando) y 0 es System (Complejo)
-            for sel, out in [('Protein\nUNL\n', 'rmsd_ligand_fit_protein.xvg'),
-                             ('UNL\nUNL\n', 'rmsd_ligand_fit_self.xvg'),
-                             ('Protein\nSystem\n', 'rmsd_complex.xvg')]:
-                cmd = [self.gmx_bin, 'rms', 
-                       '-s', 'em.tpr', 
-                       '-f', 'md_center.xtc',
-                       '-n', 'index.ndx',
-                       '-tu', 'ns', 
-                       '-o', str(out_dir / out)]
-                self._run_gmx_command(cmd, sel)
+            # Fit en Proteína [1], Cálculo en Ligando [Other/13+]
+            cmd_lig = [self.gmx_bin, 'rms', '-s', 'em.tpr', '-f', 'md_center.xtc', 
+                    '-n', 'index.ndx', '-tu', 'ns', '-o', str(out_dir / 'rmsd_ligand_fit_protein.xvg')]
+            self._run_gmx_command(cmd_lig, "1\nOther\n")
         
-        print("✅ Completado")
+        print("✅ Análisis de RMSD completado.")
     
     def analyze_rmsf(self):
         print("\n" + "="*80)
@@ -207,24 +216,34 @@ class GromacsAnalyzer:
         
         out_dir = self.analysis_dirs['sasa'].relative_to(self.results_dir)
         
-        # Análisis de la Proteína usando el nombre del grupo
-        cmd = [self.gmx_bin, 'sasa', 
-               '-f', 'md_center.xtc',
-               '-s', 'md.tpr',
-               '-n', 'index.ndx',
-               '-o', str(out_dir / 'sasa_protein.xvg'),
-               '-or', str(out_dir / 'sasa_residue.xvg'),
-               '-oa', str(out_dir / 'sasa_atom.xvg')]
-        self._run_gmx_command(cmd, 'Protein\n')
+        # Análisis de la Proteína (Grupo 1)
+        cmd_prot = [self.gmx_bin, 'sasa', 
+                '-f', 'md_center.xtc',
+                '-s', 'md.tpr',
+                '-n', 'index.ndx',
+                '-o', str(out_dir / 'sasa_protein.xvg'),
+                '-or', str(out_dir / 'sasa_residue.xvg'),
+                '-oa', str(out_dir / 'sasa_atom.xvg')]
+        self._run_gmx_command(cmd_prot, "1\n") 
         
+        # Mejora para Opción 4: Analizar DNA (Grupo 12 habitualmente)
+        if str(self.sim_type) == "4":
+            print("🧬 Detectado sistema Proteína-DNA. Analizando SASA del Ácido Nucleico...")
+            cmd_dna = [self.gmx_bin, 'sasa', 
+                    '-f', 'md_center.xtc',
+                    '-s', 'md.tpr',
+                    '-n', 'index.ndx',
+                    '-o', str(out_dir / 'sasa_dna.xvg')]
+            # En la opción 4 de GROMACS, 12 suele ser DNA, pero "DNA" por nombre es más seguro
+            self._run_gmx_command(cmd_dna, "DNA\n")
+
         if self.has_ligand:
-            # Usamos 'sustratos' comunes por nombre para evitar errores de índice
             for group_name, out in [('Other', 'sasa_ligand.xvg'), ('System', 'sasa_complex.xvg')]:
                 cmd = [self.gmx_bin, 'sasa', 
-                       '-f', 'md_center.xtc',
-                       '-s', 'md.tpr',
-                       '-n', 'index.ndx',
-                       '-o', str(out_dir / out)]
+                    '-f', 'md_center.xtc',
+                    '-s', 'md.tpr',
+                    '-n', 'index.ndx',
+                    '-o', str(out_dir / out)]
                 self._run_gmx_command(cmd, f'{group_name}\n')
         
         print("✅ Completado")
@@ -489,21 +508,28 @@ class GromacsAnalyzer:
             print(f"  ⚠️  Error al graficar energías: {e}")
     
     def _plot_rmsd_analysis(self, output_dir: Path):
-        """Grafica RMSD"""
         print("  📈 Graficando RMSD...")
         
         try:
             fig, ax = plt.subplots(figsize=(12, 6))
             
+            # Archivos base de proteína
             files = [('rmsd_backbone.xvg', 'Backbone', COLORS[0]),
                     ('rmsd_calpha.xvg', 'C-alpha', COLORS[1]),
                     ('rmsd_protein.xvg', 'Proteína completa', COLORS[2])]
             
+            # Soporte para Opción 4: Ácidos Nucleicos
+            if str(self.sim_type) == "4":
+                files.extend([
+                    ('rmsd_dna.xvg', 'DNA (Estructura)', COLORS[3]),
+                    ('rmsd_dna_fit_prot.xvg', 'DNA (Fit en Proteína)', COLORS[5])
+                ])
+            
             if self.has_ligand:
                 files.extend([('rmsd_ligand_fit_protein.xvg', 'Ligando (fit proteína)', COLORS[3]),
-                             ('rmsd_complex.xvg', 'Complejo', COLORS[4])])
+                            ('rmsd_complex.xvg', 'Complejo', COLORS[4])])
             
-            if self.is_complex:
+            if self.is_complex and str(self.sim_type) != "4":
                 files.append(('rmsd_other_fit_protein.xvg', 'Cadena B', COLORS[4]))
 
             found = False
@@ -512,6 +538,7 @@ class GromacsAnalyzer:
                 if filepath.exists():
                     data = self._read_xvg(filepath)
                     if data is not None:
+                        # GROMACS entrega tiempo en la col 0 y RMSD en la col 1
                         ax.plot(data[:, 0], data[:, 1], label=label, linewidth=1.5, color=color)
                         found = True
             
@@ -570,24 +597,41 @@ class GromacsAnalyzer:
         except Exception as e: print(f"  ⚠️ Error en Radio de Giro: {e}")
     
     def _plot_sasa_analysis(self, output_dir: Path):
-        """Grafica SASA"""
         print("  📈 Graficando SASA...")
         try:
             fig, ax = plt.subplots(figsize=(12, 6))
+            
             files = [('sasa_protein.xvg', 'Proteína', COLORS[0])]
-            if self.has_ligand: files.extend([('sasa_ligand.xvg', 'Ligando', COLORS[1]), ('sasa_complex.xvg', 'Complejo', COLORS[2])])
+            
+            # Soporte para Opción 4: Ácidos Nucleicos
+            if str(self.sim_type) == "4":
+                files.append(('sasa_dna.xvg', 'DNA/RNA', COLORS[4]))
+                
+            if self.has_ligand: 
+                files.extend([('sasa_ligand.xvg', 'Ligando', COLORS[1]), 
+                            ('sasa_complex.xvg', 'Complejo', COLORS[2])])
+                
             found = False
             for filename, label, color in files:
                 filepath = self.analysis_dirs['sasa'] / filename
                 if filepath.exists():
                     data = self._read_xvg(filepath)
                     if data is not None:
-                        ax.plot(data[:, 0], data[:, 1], label=label, color=color); found = True
+                        ax.plot(data[:, 0], data[:, 1], label=label, color=color)
+                        found = True
+                        
             if found:
-                ax.set_xlabel('Tiempo (ps)'); ax.set_ylabel('SASA (nm²)'); ax.legend(); ax.grid(True, alpha=0.3)
-                plt.savefig(output_dir / 'sasa_tiempo.png', dpi=300); print("  ✅ SASA graficado.")
+                ax.set_xlabel('Tiempo (ps)', fontsize=12, fontweight='bold')
+                ax.set_ylabel('SASA (nm²)', fontsize=12, fontweight='bold')
+                ax.set_title('Superficie Accesible al Solvente (SASA)', fontsize=14, fontweight='bold')
+                ax.legend(loc='best', frameon=True)
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig(output_dir / 'sasa_tiempo.png', dpi=300)
+                print("  ✅ SASA graficado.")
             plt.close()
-        except Exception as e: print(f"  ⚠️ Error en SASA: {e}")
+        except Exception as e: 
+            print(f"  ⚠️ Error en SASA: {e}")
     
     def _plot_hbonds_analysis(self, output_dir: Path):
         """Grafica H-bonds básicos"""

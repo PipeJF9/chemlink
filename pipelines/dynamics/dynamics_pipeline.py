@@ -22,7 +22,7 @@ class DynamicsPipeline:
         print("="*50)
 
         try:
-            #'''
+            '''
             # 0. Unificación de archivos de entrada
             if self.config["sim_type"] in ["3", "4", "5"]:
                 print("\n[*] Paso 0: Preparando complejo...")

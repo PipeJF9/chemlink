@@ -10,7 +10,7 @@ def run_dynamics_menu():
     print("  1) Proteína sola")
     print("  2) Proteína con ligando pequeño (molécula orgánica)")
     print("  3) Proteína con péptido")
-    print("  4) Proteína con ácido nucleico (DNA/RNA) [Próximamente]")
+    print("  4) Proteína con ácido nucleico (DNA/RNA)")
     print("  5) Proteína con otra proteína (complejo)")
     print("  6) Proteína + proteína + cofactor/molécula pequeña")
     print("  7) salir")
@@ -18,7 +18,7 @@ def run_dynamics_menu():
     sim_type = input("\n➤ Ingrese una opción (1-7): ")
     if sim_type == "7":
         return
-    elif sim_type != "1" and sim_type != "2" and sim_type != "3" and sim_type != "5":
+    elif sim_type != "1" and sim_type != "2" and sim_type != "3" and sim_type != "4" and sim_type != "5" and sim_type != "6":
         return
     
     # 2. PEDIR TIEMPO DE SIMULACIÓN
