@@ -26,7 +26,7 @@ class GromacsAnalyzer:
         # Flags booleanos para facilitar las condiciones en las gráficas
         self.has_ligand = sim_type in ["2", "6"]
         self.is_protein_only = sim_type == "1"
-        self.is_protein_protein = sim_type == "5"
+        self.is_complex = sim_type in ["3", "5"]
         
         self.analysis_dirs = {
             'energia': self.results_dir / 'analisis_energia',
@@ -503,7 +503,7 @@ class GromacsAnalyzer:
                 files.extend([('rmsd_ligand_fit_protein.xvg', 'Ligando (fit proteína)', COLORS[3]),
                              ('rmsd_complex.xvg', 'Complejo', COLORS[4])])
             
-            if self.is_protein_protein:
+            if self.is_complex:
                 files.append(('rmsd_other_fit_protein.xvg', 'Cadena B', COLORS[4]))
 
             found = False
@@ -885,54 +885,6 @@ class GromacsAnalyzer:
             print(f"\n❌ Error crítico en la orquestación DCCM: {e}")
             import traceback
             print(traceback.format_exc()) 
-        
-        self.run_mmpbsa_analysis_automatically()
-
-    def run_mmpbsa_analysis_automatically(self):
-        """Ejecuta automáticamente el análisis MM-PBSA/MM-GBSA sin preguntar"""
-        print("\n" + "="*80)
-        print("🧪 INICIANDO ANÁLISIS MM-PBSA/MM-GBSA AUTOMÁTICAMENTE")
-        print("="*80)
-        
-        # Validación de compatibilidad del sistema
-        if not (self.has_ligand or self.is_protein_protein):
-            print("\n⚠️  Sistema incompatible detectado")
-            print("    El análisis MM-PBSA requiere un complejo (Prot-Lig o Prot-Prot)")
-            print("    Omitiendo este análisis...")
-            return
-
-        # Verificación de archivos requeridos en results_dir
-        required_files = ['md_center.xtc', 'md.tpr', 'index.ndx']
-        missing_files = [f for f in required_files if not (self.results_dir / f).exists()]
-        
-        if missing_files:
-            print(f"⚠️  Archivos requeridos faltantes en {self.results_dir.name}: {', '.join(missing_files)}")
-            return
-        
-        try:
-            print(f"\n📊 Ejecutando análisis para tipo: {'Prot-Lig' if self.has_ligand else 'Prot-Prot'}...")
-            
-            # Instanciación directa 
-            mmpbsa_analyzer = GMX_MMPBSA_Analyzer(
-                results_dir=str(self.results_dir),
-                use_mpi=True,
-                n_cores=6
-            )
-            
-            # Ejecución del motor de cálculo
-            success = mmpbsa_analyzer.run_analysis(use_pb=True)
-            
-            if success:
-                print("\n" + "="*80)
-                print("✅ ANÁLISIS MM-PBSA/MM-GBSA COMPLETADO EXITOSAMENTE")
-                print("="*80)
-            else:
-                print("\n⚠️  El análisis MM-PBSA/MM-GBSA encontró problemas")
-        
-        except Exception as e:
-            print(f"\n❌ Error ejecutando análisis MM-PBSA/MM-GBSA: {e}")
-            import traceback
-            traceback.print_exc()
 
     def run_pipeline_analysis(self, plot_only=False):
             """

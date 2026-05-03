@@ -15,17 +15,14 @@ COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c']
 
 class GMX_MMPBSA_Analyzer:
     
-    def __init__(self, results_dir: str, use_mpi: bool = False, n_cores: int = 6):
+    def __init__(self, results_dir: str, gmx_bin: str = None):
         self.results_dir = Path(results_dir)
         self.binding_dir = self.results_dir / 'analisis_binding_energy'
         self.gmx_mmpbsa_dir = self.binding_dir / 'gmx_MMPBSA'
         
         self.gmx_mmpbsa_dir.mkdir(parents=True, exist_ok=True)
         
-        self.use_mpi = False 
-        self.n_cores = 1
-        
-        self.gmx_bin = shutil.which('gmx_mpi') or shutil.which('gmx')
+        self.gmx_bin = gmx_bin
         
         if not self.gmx_bin:
             raise RuntimeError("❌ No se encontró gmx_mpi ni gmx en el sistema.")
@@ -34,7 +31,6 @@ class GMX_MMPBSA_Analyzer:
         print("ℹ️  Modo serial forzado para gmx_MMPBSA por compatibilidad con gmx_mpi.")
     
     def detect_groups(self):
-        """Detecta grupos del sistema"""
         print("🔍 Detectando grupos...")
         
         index_file = self.results_dir / 'index.ndx'
@@ -68,7 +64,6 @@ class GMX_MMPBSA_Analyzer:
         return protein_group, ligand_group
     
     def detect_available_frames(self):
-        """Detecta frames disponibles - Alineado con GromacsAnalyzer"""
         print("📊 Detectando frames disponibles...")
         
         traj_file = self.results_dir / 'md_center.xtc'
@@ -78,8 +73,6 @@ class GMX_MMPBSA_Analyzer:
             return 500
         
         try:
-            # MEJORA: Usar self.gmx_bin en lugar de 'gmx_mpi' a secas
-            # Esto usa la ruta completa detectada en el __init__
             cmd = [self.gmx_bin, 'check', '-f', str(traj_file)]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             

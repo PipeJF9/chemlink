@@ -4,17 +4,20 @@ import os
 import datetime
 
 from pipelines.dynamics.md_analysis import GromacsAnalyzer
+from pipelines.dynamics.mmpbsa_analysis import GMX_MMPBSA_Analyzer
+from pipelines.dynamics.run_mmpbsa_for_peptide import MMPBSAPeptideAnalyzer
 
 class AnalysisStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
         self.results_dir = config["work_dir"]
+        self.threads = config.get("threads", 8)
 
         # Rutas de scripts de análisis
         self.base_path = "pipeline/dynamics"
-        self.mmpbsa_pp_ligand = os.path.join(self.base_path, "run_mmpbsa_for_pp_with_ligand.py")
         self.mmpbsa_peptide = os.path.join(self.base_path, "run_mmpbsa_for_peptide.py")
+        self.mmpbsa_pp_ligand = os.path.join(self.base_path, "run_mmpbsa_for_pp_with_ligand.py")
         
         #self.mmpbsa_ligand = os.path.join(self.base_path, "mmpbsa_analysis.py")
 
@@ -23,22 +26,23 @@ class AnalysisStep:
         print("      EJECUTANDO ANÁLISIS COMPLETO AUTOMATIZADO")
         print("="*65)
 
-        # 1. ANÁLISIS ESTRUCTURAL GENERAL
-        # Este script genera RMSD, RMSF, Radios de Giro, SASA, etc.
+        # 1. ANÁLISIS ESTRUCTURAL GENERAL: RMSD, RMSF, Radios de Giro, SASA, etc.
         self._run_general_analysis()
 
-        
         sim_type = self.config["sim_type"]
-        #if sim_type == "2":
-            #print("\n[*] Configuración: Proteína + Ligando")
-            #print("    -> Iniciando MM-PBSA para molécula pequeña...")
-            #self._execute_mmpbsa(self.mmpbsa_ligand, "Proteína-Ligando")
+        if sim_type == "2":
+            print("    -> Iniciando MM-PBSA para molécula pequeña...")
+            analyzer = GMX_MMPBSA_Analyzer(str(self.results_dir), self.gmx_bin)
+            self._execute_mmpbsa(analyzer, "Proteína-Ligando")
 
-        # 2. ANÁLISIS DE ENERGÍA DE BINDING (MM-PBSA)
-        if sim_type == "5" or sim_type == "3":
-            print("\n[*] Configuración: Complejo de Proteína + (Proteína/Péptido)")
-            print("    -> Iniciando MM-PBSA para interacción P-P...")
-            #self._execute_mmpbsa(self.mmpbsa_peptide, "Proteína-Proteína")
+        elif sim_type == "5" or sim_type == "3":
+            print("    -> Iniciando MM-PBSA para interacción...")
+            analyzer = MMPBSAPeptideAnalyzer(results_dir=str(self.results_dir), gmx_bin=self.gmx_bin)
+
+            if sim_type == "5":
+                self._execute_mmpbsa(analyzer, "Proteína-Proteína")
+            else:
+                self._execute_mmpbsa(analyzer, "Proteína-Péptido")
 
         elif sim_type == "6":
             print("\n[*] Configuración: Proteína + Proteína + Cofactor")
@@ -72,19 +76,30 @@ class AnalysisStep:
         except Exception as e:
             print(f"[X] Error en el análisis: {e}")
 
-    def _execute_mmpbsa(self, script_path, label):
-        # Helper para ejecutar los wrappers de MM-PBSA
-        if os.path.exists(script_path):
-            print(f"    -> Ejecutando análisis MM-PBSA ({label})...")
-            cmd = ["python3", script_path, "-d", self.results_dir ]
-            try:
-                subprocess.run(cmd, check=True)
-                print(f"    [✓] MM-PBSA {label} completado.")
-                self._verify_mmpbsa_results()
-            except subprocess.CalledProcessError:
-                print(f"    [X] Error: Falló el cálculo de MM-PBSA para {label}.")
-        else:
-            print(f"    [!] Error: No se encontró el wrapper {script_path}")
+    def _execute_mmpbsa(self, analyzer, label="no especificado"):
+        required_files = ['md_center.xtc', 'md.tpr', 'index.ndx']
+        missing_files = [f for f in required_files if not (Path(self.results_dir) / f).exists()]
+        
+        if missing_files:
+            print(f"⚠️  Archivos requeridos faltantes en {self.results_dir.name}: {', '.join(missing_files)}")
+            return
+        
+        try:
+            print(f"\n📊 Ejecutando análisis para tipo: '{label}'...")
+            
+            success = analyzer.run_analysis(use_pb=True)
+            
+            if success:
+                print("\n" + "="*80)
+                print("✅ ANÁLISIS MM-PBSA/MM-GBSA COMPLETADO EXITOSAMENTE")
+                print("="*80)
+            else:
+                print("\n⚠️  El análisis MM-PBSA/MM-GBSA encontró problemas")
+        
+        except Exception as e:
+            print(f"\n❌ Error ejecutando análisis MM-PBSA/MM-GBSA: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _verify_mmpbsa_results(self):
         # Verifica la existencia de los archivos de salida de MM-PBSA

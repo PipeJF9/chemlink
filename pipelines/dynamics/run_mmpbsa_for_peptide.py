@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Wrapper para ejecutar gmx_MMPBSA cuando la simulación es
 de tipo "Proteína-Proteína".
@@ -10,13 +9,10 @@ Comportamiento:
 - Llama a `mmpbsa_analysis.GMX_MMPBSA_Analyzer` para ejecutar gmx_MMPBSA.
 """
 
-import argparse
 import subprocess
 from pathlib import Path
-import sys
 import shutil
-import importlib.util
-
+from .mmpbsa_analysis import GMX_MMPBSA_Analyzer
 
 def read_sim_type(results_dir: Path) -> str:
     summary = results_dir / 'RESUMEN_SIMULACION.txt'
@@ -31,14 +27,8 @@ def read_sim_type(results_dir: Path) -> str:
                 return parts[1].strip()
     return ''
 
-
-def find_smallest_chain(pdb_file: Path) -> str:
-    # legacy: not used
-    return ''
-
-
 def find_two_largest_chains(pdb_file: Path):
-    """Devuelve las dos cadenas con más residuos como (chainA, chainB)"""
+    # Devuelve las dos cadenas con más residuos como (chainA, chainB)
     chains = {}
     with open(pdb_file, 'r') as f:
         for l in f:
@@ -57,7 +47,6 @@ def find_two_largest_chains(pdb_file: Path):
         return sorted_chains[0][0], None
     return sorted_chains[0][0], sorted_chains[1][0]
 
-
 def index_ndx_valid(index_path: Path) -> bool:
     if not index_path.exists():
         return False
@@ -75,9 +64,8 @@ def index_ndx_valid(index_path: Path) -> bool:
     except Exception:
         return False
 
-
 def get_atom_indices_for_chain(pdb_file: Path):
-    """Devuelve dict chain -> list of atom serial indices (1-based)"""
+    # Devuelve dict chain -> list of atom serial indices (1-based)
     chains = {}
     with open(pdb_file, 'r') as f:
         for l in f:
@@ -90,9 +78,8 @@ def get_atom_indices_for_chain(pdb_file: Path):
                 chains.setdefault(chain, []).append(idx)
     return chains
 
-
 def write_index_ndx(results_dir: Path, group1_chain: str, group2_chain: str, chains_dict: dict) -> bool:
-    """Escribe un index.ndx simple con dos grupos: [ Protein ] y [ Other ]"""
+    # Escribe un index.ndx simple con dos grupos: [ Protein ] y [ Other ]
     idx_file = results_dir / 'index.ndx'
     try:
         with open(idx_file, 'w') as f:
@@ -111,7 +98,6 @@ def write_index_ndx(results_dir: Path, group1_chain: str, group2_chain: str, cha
         print(f"⚠️  Error escribiendo index.ndx: {e}")
         return False
 
-
 def extract_chain_pdb(pdb_in: Path, pdb_out: Path, chain_id: str) -> bool:
     try:
         with open(pdb_in, 'r') as inp, open(pdb_out, 'w') as out:
@@ -127,7 +113,6 @@ def extract_chain_pdb(pdb_in: Path, pdb_out: Path, chain_id: str) -> bool:
         print(f"⚠️  Error extrayendo cadena: {e}")
         return False
 
-
 def run_acpype(peptide_pdb: Path, work_dir: Path, charge: int = 0) -> bool:
     # Mantener función por compatibilidad, pero para proteína-proteína
     # generalmente no es necesaria
@@ -140,7 +125,6 @@ def run_acpype(peptide_pdb: Path, work_dir: Path, charge: int = 0) -> bool:
     p = subprocess.run(cmd, cwd=str(work_dir))
     return p.returncode == 0
 
-
 def ensure_index_with_chains(results_dir: Path, chainA: str, chainB: str) -> bool:
     """
     Asegura que el archivo index.ndx contiene grupos [ Protein ] y [ Other ]
@@ -150,20 +134,19 @@ def ensure_index_with_chains(results_dir: Path, chainA: str, chainB: str) -> boo
     IMPORTANTE: gmx_MMPBSA no acepta agua e iones en las estructuras,
     y espera exactamente dos grupos en posiciones [0] y [1].
     """
-    gmx = shutil.which('gmx') or shutil.which('gmx_d') or shutil.which('gmx_mpi')
+    gmx = shutil.which('gmx_mpi')
     if gmx is None:
-        gmx = '/home/ChemFusion/funciones/Aplicaciones/gromacs/bin/gmx'
-        if not Path(gmx).exists():
-            gmx = '/usr/local/gromacs/bin/gmx'
+        print('❌ gmx_mpi no encontrado en PATH')
+        return False
 
-    pdb_file = results_dir / 'md_1.pdb'
+    pdb_file = results_dir / 'md.pdb'
     if not pdb_file.exists():
-        print('❌ md_1.pdb no encontrado en', results_dir)
+        print('❌ md.pdb no encontrado en', results_dir)
         return False
     
-    tpr = results_dir / 'md_1.tpr'
+    tpr = results_dir / 'md.tpr'
     if not tpr.exists():
-        print('❌ md_1.tpr no encontrado en', results_dir)
+        print('❌ md.tpr no encontrado en', results_dir)
         return False
     
     idx_path = results_dir / 'index.ndx'
@@ -235,8 +218,7 @@ def ensure_index_with_chains(results_dir: Path, chainA: str, chainB: str) -> boo
         print(f'❌ Error escribiendo index.ndx manualmente: {e}')
         return False
 
-
-def call_mmpbsa_module(results_dir: Path, use_pb: bool = True, use_mpi: bool = True, cores: int = 6) -> int:
+def call_mmpbsa_module(results_dir: Path, use_pb: bool = True, gmx_bin: str = None) -> int:
     """
     Llama al módulo mmpbsa_analysis para proteína-proteína.
     
@@ -248,86 +230,79 @@ def call_mmpbsa_module(results_dir: Path, use_pb: bool = True, use_mpi: bool = T
     Returns:
         0 si éxito, código de error si falla
     """
-    mmpbsa_script = Path(__file__).parent / 'mmpbsa_analysis.py'
-    if not mmpbsa_script.exists():
-        print('❌ mmpbsa_analysis.py no encontrado en', mmpbsa_script)
-        return 2
-
-    spec = importlib.util.spec_from_file_location('mmpbsa_analysis', str(mmpbsa_script))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    # Para proteína-proteína, usar modo serial por defecto
-    # (MPI puede causar problemas con sistemas grandes)
-    analyzer = module.GMX_MMPBSA_Analyzer(str(results_dir), use_mpi=False, n_cores=1)
+    analyzer = GMX_MMPBSA_Analyzer(str(results_dir), gmx_bin)
     success = analyzer.run_analysis(use_pb=use_pb)
     return 0 if success else 3
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Ejecuta gmx_MMPBSA para simulaciones proteína-proteína')
-    parser.add_argument('-d', '--directory', required=True, help='Directorio de resultados MD')
-    parser.add_argument('--charge', type=int, default=0, help='Carga neta (si aplica)')
-    args = parser.parse_args()
+class MMPBSAPeptideAnalyzer:
+    def __init__(self, results_dir: str, charge: int = 0, gmx_bin: str = None):
+        self.results_dir = Path(results_dir)
+        self.charge = charge
+        self.gmx_bin = gmx_bin
 
-    results_dir = Path(args.directory)
-    if not results_dir.exists():
-        print(f'❌ Directorio no existe: {results_dir}')
-        sys.exit(1)
+    def run_analysis(self, use_pb: bool = False) -> bool:
+        # Ejecuta el flujo de MM-PBSA. Retorna True si es exitoso, False si falla.
 
-    # Detectar tipo de simulación
-    sim_type = read_sim_type(results_dir)
-    print(f'🔎 Tipo de simulación detectado: "{sim_type}"')
-    
-    # Verificar archivos necesarios
-    pdb_file = results_dir / 'md_1.pdb'
-    if not pdb_file.exists():
-        print('❌ md_1.pdb no encontrado en', results_dir)
-        sys.exit(1)
-    
-    tpr_file = results_dir / 'md_1.tpr'
-    if not tpr_file.exists():
-        print('❌ md_1.tpr no encontrado en', results_dir)
-        sys.exit(1)
+        if not self.results_dir.exists():
+            print(f'❌ Directorio no existe: {self.results_dir}')
+            return False
 
-    # Detectar cadenas
-    chainA, chainB = find_two_largest_chains(pdb_file)
-    if not chainA or not chainB:
-        print('⚠️  No se detectaron dos cadenas grandes - intentando con todas las cadenas...')
-        # Fallback: usar las dos primeras cadenas
-        chains_file = {}
-        with open(pdb_file, 'r') as f:
-            for line in f:
-                if line.startswith(('ATOM', 'HETATM')) and len(line) >= 22:
-                    chain = line[21]
-                    chains_file.setdefault(chain, 0)
-                    chains_file[chain] += 1
+        # Detectar tipo de simulación
+        sim_type = read_sim_type(self.results_dir)
+        print(f'🔎 Tipo de simulación detectado: "{sim_type}"')
         
-        sorted_chains = sorted(chains_file.items(), key=lambda x: x[1], reverse=True)
-        if len(sorted_chains) >= 2:
-            chainA, _ = sorted_chains[0]
-            chainB, _ = sorted_chains[1]
-            print(f'✅ Cadenas detectadas: A={chainA}, B={chainB}')
+        # Verificar archivos necesarios
+        pdb_file = self.results_dir / 'md.pdb'
+        if not pdb_file.exists():
+            print(f'❌ md.pdb no encontrado en {self.results_dir}')
+            return False
+        
+        tpr_file = self.results_dir / 'md.tpr'
+        if not tpr_file.exists():
+            print(f'❌ md.tpr no encontrado en {self.results_dir}')
+            return False
+
+        # Detectar cadenas
+        chainA, chainB = find_two_largest_chains(pdb_file)
+        if not chainA or not chainB:
+            print('⚠️ No se detectaron dos cadenas grandes - intentando con todas las cadenas...')
+            # Fallback: usar las dos primeras cadenas
+            chains_file = {}
+            with open(pdb_file, 'r') as f:
+                for line in f:
+                    if line.startswith(('ATOM', 'HETATM')) and len(line) >= 22:
+                        chain = line[21]
+                        chains_file.setdefault(chain, 0)
+                        chains_file[chain] += 1
+            
+            sorted_chains = sorted(chains_file.items(), key=lambda x: x[1], reverse=True)
+            if len(sorted_chains) >= 2:
+                chainA, _ = sorted_chains[0]
+                chainB, _ = sorted_chains[1]
+                print(f'✅ Cadenas detectadas: A={chainA}, B={chainB}')
+            else:
+                print('❌ No se encontraron suficientes cadenas en la estructura')
+                return False
         else:
-            print('❌ No se encontraron suficientes cadenas en la estructura')
-            sys.exit(1)
-    else:
-        print(f'✅ Cadenas detectadas: A={chainA}, B={chainB}')
+            print(f'✅ Cadenas detectadas: A={chainA}, B={chainB}')
 
-    # Crear o validar index.ndx
-    print('🔧 Preparando archivo de índice...')
-    if not ensure_index_with_chains(results_dir, chainA, chainB):
-        print('❌ No se pudo crear/validar index.ndx')
-        sys.exit(1)
+        # Crear o validar index.ndx
+        print('🔧 Preparando archivo de índice...')
+        if not ensure_index_with_chains(self.results_dir, chainA, chainB):
+            print('❌ No se pudo crear/validar index.ndx')
+            return False
 
-    # Ejecutar análisis MM-PBSA
-    print('🔧 Ejecutando análisis MM-PBSA/MM-GBSA (gmx_MMPBSA)')
-    print('   Esto puede tomar varios minutos...')
-    rc = call_mmpbsa_module(results_dir, use_pb=True, use_mpi=True, cores=6)
-    
-    if rc == 0:
-        print('✅ Análisis MM-PBSA completado exitosamente')
-    else:
-        print(f'⚠️  Análisis MM-PBSA finalizó con código: {rc}')
-    
-    sys.exit(rc)
+        # Ejecutar análisis MM-PBSA
+        print('🔧 Ejecutando análisis MM-PBSA/MM-GBSA (gmx_MMPBSA)')
+        print('   Esto puede tomar varios minutos...')
+        
+        # Usamos los hilos (cores) configurados en el constructor
+        rc = call_mmpbsa_module(self.results_dir, use_pb=use_pb, gmx_bin=self.gmx_bin)
+        
+        if rc == 0:
+            print('✅ Análisis MM-PBSA completado exitosamente')
+            return True
+        else:
+            print(f'⚠️ Análisis MM-PBSA finalizó con código: {rc}')
+            return False
