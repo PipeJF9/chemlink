@@ -313,7 +313,7 @@ class GMX_MMPBSA_Analyzer:
                     gb_section = gb_section.split('POISSON BOLTZMANN')[0]
                 
                 for line in gb_section.split('\n'):
-                    if 'DELTA TOTAL' in line or 'DELTA G binding' in line:
+                    if ('DELTA' in line or 'Δ' in line) and ('TOTAL' in line or 'G binding' in line):
                         parts = line.split()
                         if len(parts) >= 3:
                             try:
@@ -329,7 +329,7 @@ class GMX_MMPBSA_Analyzer:
                 pb_section = content.split('POISSON BOLTZMANN')[1]
                 
                 for line in pb_section.split('\n'):
-                    if 'DELTA TOTAL' in line or 'DELTA G binding' in line:
+                    if ('DELTA' in line or 'Δ' in line) and ('TOTAL' in line or 'G binding' in line):
                         parts = line.split()
                         if len(parts) >= 3:
                             try:
@@ -344,9 +344,8 @@ class GMX_MMPBSA_Analyzer:
             if not energies['GB'] and not energies['PB']:
                 print("   ⚠️  Búsqueda alternativa...")
                 for line in content.split('\n'):
-                    if 'TOTAL' in line and 'DELTA' in line:
+                    if ('DELTA' in line or 'Δ' in line) and 'TOTAL' in line:
                         print(f"   Línea encontrada: {line.strip()}")
-        
         except Exception as e:
             print(f"   ⚠️  Error: {e}")
         

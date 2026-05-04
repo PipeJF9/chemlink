@@ -1,5 +1,3 @@
-# VERIFICAR LO DE CORES
-# RIVISAR SI ES ENCESARIO CORRER MMPBSA 
 import os
 import sys
 import numpy as np
@@ -373,6 +371,7 @@ class GromacsAnalyzer:
         self._plot_sasa_analysis(graficas_dir)
         self._plot_hbonds_analysis(graficas_dir)
         self._plot_hbonds_detailed(graficas_dir)
+        self._plot_ligand_contacts(graficas_dir)
         self._create_dashboard(graficas_dir)
         
         print("✅ Todas las gráficas generadas")
@@ -662,6 +661,44 @@ class GromacsAnalyzer:
         except Exception as e: 
             print(f"  ⚠️ Error en H-bonds: {e}")
     
+    def _plot_ligand_contacts(self, output_dir: Path):
+        """Grafica el número de contactos proteína-ligando a lo largo del tiempo."""
+        if not self.has_ligand:
+            return
+
+        hbonds_dir = self.analysis_dirs['hbonds']
+        contacts_file = hbonds_dir / 'contacts_prot_lig.xvg'
+        
+        if not contacts_file.exists():
+            print("  ⚠️ Archivo 'contacts_prot_lig.xvg' no encontrado. Omitiendo gráfica de contactos.")
+            return
+
+        print("  📈 Graficando contactos de corto alcance...")
+        try:
+            data = self._read_xvg(str(contacts_file))
+            if data is not None and data.shape[1] >= 2:
+                plt.figure(figsize=(12, 6))
+                # GROMACS suele dar tiempo en ps (Col 0) y número de contactos (Col 1)
+                plt.plot(data[:, 0], data[:, 1], color='#2ca02c', linewidth=1.5, alpha=0.8)
+                
+                # Línea de promedio para análisis de estabilidad
+                mean_val = np.mean(data[:, 1])
+                plt.axhline(y=mean_val, color='r', linestyle='--', 
+                            label=f'Promedio: {mean_val:.2f}')
+                
+                plt.title('Contactos de Corto Alcance Proteína-Ligando (<0.35 nm)', fontweight='bold')
+                plt.xlabel('Tiempo (ps)', fontweight='bold')
+                plt.ylabel('Número de Contactos', fontweight='bold')
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                plt.savefig(output_dir / 'contactos_ligando_tiempo.png', dpi=300)
+                plt.close()
+                print("  ✅ Gráfica de contactos generada.")
+        except Exception as e:
+            print(f"  ⚠️ Error al graficar contactos: {e}")
+
     def _create_dashboard(self, output_dir: Path):
         """Dashboard resumen"""
         print("  📊 Creando dashboard...")

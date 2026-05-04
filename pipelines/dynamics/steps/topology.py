@@ -40,7 +40,7 @@ class TopologyStep:
         repaired_filename = "complex_repaired.pdb"
         repaired_pdb_abs = os.path.join(work_dir_abs, repaired_filename)
 
-        if sim_type in ["3", "4", "5"]:
+        if sim_type in ["3", "4", "5", "6"]:
             command_cmd = [
                 self.gmx_bin, "pdb2gmx",
                 "-f", self.pdb_input_abs,

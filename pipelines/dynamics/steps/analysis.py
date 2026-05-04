@@ -6,6 +6,7 @@ import datetime
 from pipelines.dynamics.md_analysis import GromacsAnalyzer
 from pipelines.dynamics.mmpbsa_analysis import GMX_MMPBSA_Analyzer
 from pipelines.dynamics.run_mmpbsa_for_peptide import MMPBSAPeptideAnalyzer
+from pipelines.dynamics.run_mmpbsa_for_pp_with_ligand import MMPBSAPPLigandAnalyzer
 
 class AnalysisStep:
     def __init__(self, config, gmx_bin):
@@ -45,9 +46,14 @@ class AnalysisStep:
                 self._execute_mmpbsa(analyzer, "Proteína-Péptido")
 
         elif sim_type == "6":
-            print("\n[*] Configuración: Proteína + Proteína + Cofactor")
-            print("    -> Iniciando MM-PBSA P-P con ligando explícito...")
-            #self._execute_mmpbsa(self.mmpbsa_pp_ligand, "P-P + Cofactor")
+            print("\n[*] Configuración: Proteína + Proteína + Cofactor (Opción 6)")
+            # Instancia la nueva clase especializada para PP + Ligando
+            analyzer = MMPBSAPPLigandAnalyzer(
+                results_dir=str(self.results_dir), 
+                gmx_bin=self.gmx_bin,
+                n_cores=self.threads # Se pasan los cores para procesamiento paralelo no-MPI[cite: 20]
+            )
+            self._execute_mmpbsa(analyzer, "P-P + Cofactor")
         else:
             print(f"\n[*] Tipo de sistema {sim_type}: No requiere análisis de binding energy.")
 
@@ -63,7 +69,7 @@ class AnalysisStep:
             # Instanciamos apuntando a work_dir
             analyzer = GromacsAnalyzer(
                 results_dir=self.results_dir, 
-                sim_type=str(self.config.get("sim_type", "1")), 
+                sim_type=str(self.config.get("sim_type")), 
                 gmx_bin=self.gmx_bin
             )
 

@@ -68,7 +68,10 @@ class PostProcessingStep:
         elif sim_type in ["3", "5"]: # Péptido o Proteína-Proteína
             print("      [i] Creando índice separando cadenas mediante topología (splitres)...")
             make_ndx_input = "splitres 0\nq\n" 
-            
+        
+        elif sim_type == "6": # Proteína-Proteína + Ligando
+            print("      [i] Creando índice para Proteína-Proteína + Ligando...")
+            make_ndx_input = "splitres 0\n1 | 13\nname 22 Complex_System\nq\n"
         else:
             make_ndx_input = "q\n"
 
