@@ -1,0 +1,76 @@
+@startuml
+title Chemlink Docking Workflow - Sequence Diagram
+
+actor "Bioinformatics Researcher" as User
+
+participant "CLI Application" as CLI
+participant "Command Parser" as Parser
+participant "Pipeline Orchestrator" as Orchestrator
+participant "Molecular Execution Manager" as ExecManager
+participant "Molecular Tools Adapter" as ToolsAdapter
+participant "HPC Job Manager" as HPCManager
+participant "Slurm" as Slurm
+participant "Cluster HPC Node" as Cluster
+participant "Autodock GPU" as Autodock
+participant "Fpocket" as Fpocket
+participant "Results Processor" as Results
+participant "Storage Manager" as Storage
+database "Data Storage (NAS)" as NAS
+
+== CLI Execution ==
+
+User -> CLI : run docking command
+CLI -> Parser : parseArguments()
+
+Parser -> Orchestrator : startPipeline(config)
+
+== Pipeline Preparation ==
+
+Orchestrator -> ExecManager : prepareLigand()
+Orchestrator -> ExecManager : prepareReceptor()
+
+== Active Site Detection ==
+
+Orchestrator -> ToolsAdapter : detectActiveSite()
+ToolsAdapter -> Fpocket : runFpocket()
+Fpocket --> ToolsAdapter : bindingSites
+ToolsAdapter --> Orchestrator : detectedSites
+
+== Job Submission ==
+
+Orchestrator -> HPCManager : buildDockingJob()
+
+HPCManager -> Slurm : submitJob(script)
+
+Slurm -> Cluster : scheduleJob()
+
+== Docking Execution ==
+
+Cluster -> Autodock : runDockingGPU()
+Autodock --> Cluster : dockingResults
+
+== Job Monitoring ==
+
+Orchestrator -> HPCManager : checkJobStatus()
+HPCManager -> Slurm : queryJob()
+Slurm --> HPCManager : jobStatus
+
+== Results Processing ==
+
+Cluster --> Results : output files
+Results -> Results : parseDockingResults()
+
+Results -> Storage : persistResults()
+
+Storage -> NAS : writeData()
+
+NAS --> Storage : ok
+
+Storage --> Results : stored
+
+Results --> Orchestrator : processedResults
+
+Orchestrator --> CLI : executionCompleted
+CLI --> User : displayResults
+
+@enduml
