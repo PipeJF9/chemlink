@@ -25,6 +25,6 @@ def _run(args) -> int:
 	for name, path in results.get('outputs', {}).items():
 		print(f"  • {name}: {path}")
 	if not results.get('outputs'):
-		print("  (none) No DLG files were found under <output_dir>/ResultadosDocking/**/dlg/*.dlg")
+		print(f"  (none) No DLG files were found under {args.output_dir}. Expected DLG files under 'docking_results' subfolders.")
 	
 	return 0

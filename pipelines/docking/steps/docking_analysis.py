@@ -55,7 +55,7 @@ class DockingAnalysis:
 	def __init__(self, output_path: str, pdb_export_limit: int = 10, max_workers: int = 4):
 		self.output_path = output_path
 		self.results_dir = os.path.join(self.output_path, "docking_results")
-		self.analysis_dir = os.path.join(self.output_path, "docking_analisis")
+		self.analysis_dir = os.path.join(self.output_path, "docking_analysis")
 		self.summary_txt = os.path.join(self.analysis_dir, "docking_analysis_summary.txt")
 		self.summary_csv = os.path.join(self.analysis_dir, "docking_statistics.csv")
 		self.legacy_csv = os.path.join(self.analysis_dir, "statistics.csv")
@@ -64,6 +64,8 @@ class DockingAnalysis:
 		self.dynamics_candidates_csv = os.path.join(self.analysis_dir, "dynamics_candidates.csv")
 		self.pdb_export_limit = max(0, pdb_export_limit)
 		self.max_workers = max(1, max_workers)
+		self._pose_coords_cache: Dict[Tuple[str, int], Optional[np.ndarray]] = {}
+		self._ligand_pose_groups: Dict[Tuple[str, str, str], List[DockingPose]] = {}
 
 	@staticmethod
 	def _parse_float(value: str) -> Optional[float]:
@@ -151,6 +153,13 @@ class DockingAnalysis:
 			logger.debug("Failed to extract coords from %s run %s: %s", dlg_path, run_number, exc)
 			return None
 
+	def _get_pose_coords(self, dlg_path: str, run_number: int) -> Optional[np.ndarray]:
+		"""Return cached pose coordinates when available."""
+		cache_key = (dlg_path, run_number)
+		if cache_key not in self._pose_coords_cache:
+			self._pose_coords_cache[cache_key] = self._extract_pose_coords(dlg_path, run_number)
+		return self._pose_coords_cache[cache_key]
+
 	def _write_pose_pdb(self, coords: np.ndarray, out_path: str, ligand_name: str) -> None:
 		"""Write a simple PDB file for the ligand coordinates (no connectivity)."""
 		create_folder(os.path.dirname(out_path))
@@ -227,6 +236,8 @@ class DockingAnalysis:
 			key = (pose.protein, pose.ligand, pose.dlg_file)
 			ligand_groups[key].append(pose)
 
+		self._ligand_pose_groups = dict(ligand_groups)
+
 		stats_list: List[DockingLigandStats] = []
 
 		for (protein, ligand, dlg_file), group in ligand_groups.items():
@@ -245,29 +256,6 @@ class DockingAnalysis:
 			best_pose_obj = best_pose
 			best_run_num = best_pose_obj.run if best_pose_obj is not None else None
 
-			# Attempt to compute RMSD of all poses to best; PDB export is handled later
-			mean_rmsd = None
-			std_rmsd = None
-			best_pose_pdb = None
-			try:
-				if best_run_num is not None:
-					best_coords = self._extract_pose_coords(dlg_file, best_run_num)
-					if best_coords is not None:
-						# compute rmsd per pose
-						rmsds = []
-						for p in group:
-							coords = self._extract_pose_coords(p.dlg_file, p.run)
-							if coords is None or coords.shape != best_coords.shape:
-								continue
-							r = self._rmsd_kabsch(best_coords, coords)
-							if r is not None:
-								rmsds.append(r)
-						if rmsds:
-							mean_rmsd = float(statistics.mean(rmsds))
-							std_rmsd = float(statistics.pstdev(rmsds)) if len(rmsds) > 1 else 0.0
-			except Exception as exc:
-				logger.debug("RMSD calculation failed for %s %s: %s", protein, ligand, exc)
-
 			# QC flags (simple heuristics)
 			qc_flag = "PASS"
 			if len(affinities) < 10:
@@ -276,8 +264,6 @@ class DockingAnalysis:
 				qc_flag = "WEAK_BINDER"
 			if std_affinity > 3.0:
 				qc_flag = "HIGH_VARIABILITY"
-			if mean_rmsd is None:
-				qc_flag = "NO_POSE_PDB"
 
 			stats_list.append(DockingLigandStats(
 				protein=protein,
@@ -289,10 +275,10 @@ class DockingAnalysis:
 				mean_affinity=mean_affinity,
 				std_affinity=std_affinity,
 				dlg_file=dlg_file,
-				mean_rmsd=mean_rmsd,
-				std_rmsd=std_rmsd,
+				mean_rmsd=None,
+				std_rmsd=None,
 				qc_flag=qc_flag,
-				best_pose_pdb=best_pose_pdb,
+				best_pose_pdb=None,
 			))
 
 		return sorted(
@@ -409,11 +395,10 @@ class DockingAnalysis:
 				})
 
 	def _export_best_candidate_pdbs(self, stats: List[DockingLigandStats], top_n: int = 10) -> None:
-		"""Export PDBs only for the top ranked candidates using parallel threads (I/O-bound).
+		"""Compute RMSD and export PDBs only for the top ranked candidates.
 
-		This keeps the analysis fast and limits file generation to the ligands that
-		actually matter for the next dynamics step. Uses ThreadPoolExecutor to extract
-		and write PDBs in parallel (I/O-bound operations benefit from concurrency).
+		This keeps the analysis fast by limiting the expensive pose reconstruction to
+		the ligands that actually matter for the next dynamics step.
 		"""
 		ranked = sorted(stats, key=lambda s: (s.mean_affinity, s.best_affinity))[:top_n]
 		pdb_dir = os.path.join(self.analysis_dir, "poses_for_md")
@@ -422,20 +407,34 @@ class DockingAnalysis:
 
 		# Parallel export of PDBs using ThreadPoolExecutor (I/O-bound task)
 		def _export_single_pdb_task(stat: DockingLigandStats) -> Tuple[Tuple[str, str, str], Optional[str]]:
-			"""Helper: export PDB for a single ligand. Returns (key, pdb_path)."""
-			coords = self._extract_pose_coords(stat.dlg_file, stat.best_run)
-			if coords is None:
-				return (stat.protein, stat.ligand, stat.dlg_file), None
+			"""Helper: compute RMSD and export PDB for a single ligand."""
+			best_coords = self._get_pose_coords(stat.dlg_file, stat.best_run)
+			if best_coords is None:
+				return (stat.protein, stat.ligand, stat.dlg_file), (None, None, None)
+
+			rmsds: List[float] = []
+			group_key = (stat.protein, stat.ligand, stat.dlg_file)
+			for candidate in self._ligand_pose_groups.get(group_key, []):
+				coords = self._get_pose_coords(candidate.dlg_file, candidate.run)
+				if coords is None or coords.shape != best_coords.shape:
+					continue
+				rmsd_value = self._rmsd_kabsch(best_coords, coords)
+				if rmsd_value is not None:
+					rmsds.append(rmsd_value)
+
 			pdb_name = f"{stat.protein}_{stat.ligand}_best_run_{stat.best_run}.pdb"
 			pdb_path = os.path.join(pdb_dir, pdb_name)
-			self._write_pose_pdb(coords, pdb_path, stat.ligand)
-			return (stat.protein, stat.ligand, stat.dlg_file), pdb_path
+			self._write_pose_pdb(best_coords, pdb_path, stat.ligand)
+			mean_rmsd = float(statistics.mean(rmsds)) if rmsds else None
+			std_rmsd = float(statistics.pstdev(rmsds)) if len(rmsds) > 1 else 0.0 if rmsds else None
+			return (stat.protein, stat.ligand, stat.dlg_file), (pdb_path, mean_rmsd, std_rmsd)
 
 		with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
 			futures = [executor.submit(_export_single_pdb_task, stat) for stat in ranked]
 			for future in futures:
-				key, pdb_path = future.result()
-				if key in stats_by_key and pdb_path is not None:
+				key, payload = future.result()
+				if key in stats_by_key and payload is not None:
+					pdb_path, mean_rmsd, std_rmsd = payload
 					updated = stats_by_key[key]
 					stats_by_key[key] = DockingLigandStats(
 						protein=updated.protein,
@@ -447,8 +446,8 @@ class DockingAnalysis:
 						mean_affinity=updated.mean_affinity,
 						std_affinity=updated.std_affinity,
 						dlg_file=updated.dlg_file,
-						mean_rmsd=updated.mean_rmsd,
-						std_rmsd=updated.std_rmsd,
+						mean_rmsd=mean_rmsd,
+						std_rmsd=std_rmsd,
 						qc_flag=updated.qc_flag,
 						best_pose_pdb=pdb_path,
 					)

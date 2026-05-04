@@ -86,12 +86,13 @@ class DockingExecution:
 
 		self.autodock_gpu.validate()
 
-	def _log(self, level: str, message: str) -> None:
-		"""Write a timestamped message to the step log and stdout."""
+	def _log(self, level: str, message: str, echo: bool = True) -> None:
+		"""Write a timestamped message to the step log and optionally stdout."""
 		create_folder(self.output_path)
 		timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 		line = f"[{timestamp}] [{level}] {message}"
-		print(line)
+		if echo:
+			print(line)
 		with open(self.log_file, "a", encoding="utf-8") as handle:
 			handle.write(line + "\n")
 
@@ -280,31 +281,44 @@ class DockingExecution:
 		failed = 0
 		results: List[Dict[str, Any]] = []
 
-		if n_workers == 1:
-			for job in tqdm(jobs, desc="Docking", unit="job", ncols=80):
-				try:
-					result = self._run_single(job)
-					self._move_outputs(result)
-					results.append(result)
-					successful += 1
-					self._log("INFO", f"OK {job.protein_name} vs {job.ligand_name}")
-				except Exception as exc:
-					failed += 1
-					self._log("ERROR", f"FAILED {job.protein_name} vs {job.ligand_name}: {exc}")
-		else:
-			with ThreadPoolExecutor(max_workers=n_workers) as executor:
-				future_map = {executor.submit(self._run_single, job): job for job in jobs}
-				for future in tqdm(as_completed(future_map), total=len(future_map), desc="Docking", unit="job", ncols=80):
-					job = future_map[future]
+		with tqdm(total=len(jobs), desc="Docking", unit="job", ncols=80) as progress:
+			def _record_success(job: DockingJob, result: Dict[str, Any]) -> None:
+				nonlocal successful
+				self._move_outputs(result)
+				results.append(result)
+				successful += 1
+				status_text = f"OK {job.protein_name} vs {job.ligand_name}"
+				progress.set_postfix_str(status_text)
+				self._log("INFO", status_text, echo=False)
+
+			def _record_failure(job: DockingJob, exc: Exception) -> None:
+				nonlocal failed
+				failed += 1
+				status_text = f"FAILED {job.protein_name} vs {job.ligand_name}: {exc}"
+				progress.set_postfix_str(status_text)
+				self._log("ERROR", status_text, echo=False)
+
+			if n_workers == 1:
+				for job in jobs:
 					try:
-						result = future.result()
-						self._move_outputs(result)
-						results.append(result)
-						successful += 1
-						self._log("INFO", f"OK {job.protein_name} vs {job.ligand_name}")
+						result = self._run_single(job)
+						_record_success(job, result)
 					except Exception as exc:
-						failed += 1
-						self._log("ERROR", f"FAILED {job.protein_name} vs {job.ligand_name}: {exc}")
+						_record_failure(job, exc)
+					finally:
+						progress.update(1)
+			else:
+				with ThreadPoolExecutor(max_workers=n_workers) as executor:
+					future_map = {executor.submit(self._run_single, job): job for job in jobs}
+					for future in as_completed(future_map):
+						job = future_map[future]
+						try:
+							result = future.result()
+							_record_success(job, result)
+						except Exception as exc:
+							_record_failure(job, exc)
+						finally:
+							progress.update(1)
 
 		for protein_name in protein_names:
 			protein_results = [r for r in results if r["protein"] == protein_name]

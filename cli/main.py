@@ -2,8 +2,10 @@
 
 import os
 import sys
+from datetime import datetime
 from argparse import ArgumentParser, Namespace
 from typing import Optional, Tuple
+from uuid import uuid4
 
 if __package__ in (None, ""):
 	project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +27,15 @@ def _manual_params(args: Namespace) -> Tuple[Optional[Tuple[float, float, float]
 	center = tuple(args.manual_center) if args.manual_center else None
 	npts = tuple(args.manual_npts) if args.manual_npts else None
 	return center, npts
+
+
+def _create_run_output_dir(base_output_dir: str) -> str:
+	"""Create a fresh run directory inside the provided base output directory."""
+	os.makedirs(base_output_dir, exist_ok=True)
+	run_name = f"run_{datetime.now():%Y%m%dT%H%M%S}_{uuid4().hex[:8]}"
+	run_output_dir = os.path.join(base_output_dir, run_name)
+	os.makedirs(run_output_dir, exist_ok=False)
+	return run_output_dir
 
 
 def _run_receptor_preparation(args: Namespace) -> int:
@@ -124,7 +135,7 @@ def _run_docking_analysis(args: Namespace) -> int:
 		for report_name, report_path in outputs.items():
 			print(f"  • {report_name}: {report_path}")
 	else:
-		print("\nOutput files: none (no DLG files were found under <output_dir>/ResultadosDocking/**/dlg/*.dlg)")
+		print(f"\nOutput files: none (no DLG files were found under {args.output_dir}/docking_results/**/dlg/*.dlg)")
 	return 0
 
 
@@ -135,10 +146,11 @@ def _run_docking_flow(args: Namespace) -> int:
 		from chemlink.pipelines.docking import DockingPipeline  # type: ignore
 
 	manual_center, manual_npts = _manual_params(args)
+	run_output_dir = _create_run_output_dir(args.output_dir)
 	pipeline = DockingPipeline(
 		receptor_input_path=args.receptor_input_dir,
 		ligand_input_path=args.ligand_input_dir,
-		output_path=args.output_dir,
+		output_path=run_output_dir,
 		mgltools_path=args.mgltools_path,
 		fpocket_path=args.fpocket_path,
 		manual_center=manual_center,
@@ -159,6 +171,7 @@ def _run_docking_flow(args: Namespace) -> int:
 	)
 
 	print("\nFinal Statistics:")
+	print(f"  Run directory: {run_output_dir}")
 	print(f"  Executed steps: {', '.join(result.executed_steps)}")
 	if "receptor" in result.executed_steps:
 		print(f"  Receptors: {result.receptor_preparation}")
@@ -180,10 +193,11 @@ def _run_docking_pipeline(args: Namespace, full: bool) -> int:
 		from chemlink.pipelines.docking import DockingPipeline  # type: ignore
 
 	manual_center, manual_npts = _manual_params(args)
+	output_dir = _create_run_output_dir(args.output_dir) if full else args.output_dir
 	pipeline = DockingPipeline(
 		receptor_input_path=args.receptor_input_dir,
 		ligand_input_path=args.ligand_input_dir,
-		output_path=args.output_dir,
+		output_path=output_dir,
 		mgltools_path=args.mgltools_path,
 		fpocket_path=args.fpocket_path,
 		manual_center=manual_center,
@@ -208,6 +222,8 @@ def _run_docking_pipeline(args: Namespace, full: bool) -> int:
 		)
 
 	print("\nFinal Statistics:")
+	if full:
+		print(f"  Run directory: {output_dir}")
 	print(f"  Receptors: {result.receptor_preparation}")
 	print(f"  Ligands: {result.ligand_preparation}")
 	print(f"  Active sites: {result.active_site_detection}")
