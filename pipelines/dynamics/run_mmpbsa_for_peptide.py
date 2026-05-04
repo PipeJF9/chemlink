@@ -219,17 +219,6 @@ def ensure_index_with_chains(results_dir: Path, chainA: str, chainB: str) -> boo
         return False
 
 def call_mmpbsa_module(results_dir: Path, use_pb: bool = True, gmx_bin: str = None) -> int:
-    """
-    Llama al módulo mmpbsa_analysis para proteína-proteína.
-    
-    Para proteína-proteína PURA (sin ligando pequeño), gmx_MMPBSA debe:
-    - Tratar ambas proteínas como complejos (sin archivo MOL2)
-    - Usar topología basada en GROMACS
-    - NO buscar archivos ACPYPE/MOL2/FRCMOD
-    
-    Returns:
-        0 si éxito, código de error si falla
-    """
     analyzer = GMX_MMPBSA_Analyzer(str(results_dir), gmx_bin)
     success = analyzer.run_analysis(use_pb=use_pb)
     return 0 if success else 3

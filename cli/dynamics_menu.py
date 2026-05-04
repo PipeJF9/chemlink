@@ -18,8 +18,6 @@ def run_dynamics_menu():
     sim_type = input("\n➤ Ingrese una opción (1-7): ")
     if sim_type == "7":
         return
-    elif sim_type != "1" and sim_type != "2" and sim_type != "3" and sim_type != "4" and sim_type != "5" and sim_type != "6":
-        return
     
     # 2. PEDIR TIEMPO DE SIMULACIÓN
     while True:
@@ -52,9 +50,9 @@ def run_dynamics_menu():
     # 4. PEDIR ARCHIVOS DE ENTRADA
     if sim_type == "2":
         prot_file = input("➤ PDB de la PROTEÍNA (sin extensión): ")
-        lig_file = input("➤ PDB del LIGANDO (sin extensión): ")
+        lig_file = input("➤ PDB del LIGANDO: ")
         config["pdb_input"] = f"data/input/dynamics/{prot_file}.pdb"
-        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}.pdb"
+        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}"
         config["ligand_charge"] = int(input("➤ Carga neta del ligando (ej: 0): "))
 
     elif sim_type in ["3", "4", "5"]:
@@ -69,6 +67,19 @@ def run_dynamics_menu():
 
         config["pdb_input"] = os.path.join(config["work_dir"], "complex.pdb")
         
+    elif sim_type == "6":
+        print("\n--- Configuración Proteína-Proteína + Ligando/Cofactor ---")
+        prot_file = input("➤ PDB de la PROTEÍNA 1 (sin extensión): ")
+        partner_file = input("➤ PDB de la PROTEÍNA 2 (sin extensión): ")
+        lig_file = input("➤ PDB del COFACTOR/LIGANDO: ")
+        
+        config["pdb_protein"] = f"data/input/dynamics/{prot_file}.pdb"
+        config["pdb_partner"] = f"data/input/dynamics/{partner_file}.pdb"
+        config["pdb_input"] = os.path.join(config["work_dir"], "complex.pdb")
+        
+        config["ligand_pdb"] = f"data/input/dynamics/{lig_file}"
+        config["ligand_charge"] = int(input("➤ Carga neta del cofactor/ligando (ej: 0): "))
+
     else:
         pdb_file = input("➤ Nombre del PDB (sin extensión): ")
         config["pdb_input"] = f"data/input/dynamics/{pdb_file}.pdb"

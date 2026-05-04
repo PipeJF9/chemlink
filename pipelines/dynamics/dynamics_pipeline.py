@@ -22,9 +22,9 @@ class DynamicsPipeline:
         print("="*50)
 
         try:
-            '''
+            #'''
             # 0. Unificación de archivos de entrada
-            if self.config["sim_type"] in ["3", "4", "5"]:
+            if self.config["sim_type"] in ["3", "4", "5", "6"]:
                 print("\n[*] Paso 0: Preparando complejo...")
                 comp = ComplexBuilderStep(self.config)
                 comp.run()
@@ -35,7 +35,7 @@ class DynamicsPipeline:
             topo.run()
 
             # Lógica de ligando pequeño Opción 2
-            if self.config["sim_type"] == "2":
+            if self.config["sim_type"] in ["2", "6"]:
                 ligand_step = LigandTopologyStep(self.config, self.gmx_bin)
                 ligand_step.run()
                 
@@ -78,7 +78,7 @@ class DynamicsPipeline:
             print("\n[Paso 8/8] Analizando resultados...")
             analysis = AnalysisStep(self.config, self.gmx_bin)
             analysis.run()
-
+            #'''
             print("\n[✓] ¡Proceso de Dinámica finalizado con éxito!")
         except Exception as e:
             print(f"\n[X] ERROR CRÍTICO EN EL PIPELINE: {e}")
