@@ -106,7 +106,7 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.2
     wget -q https://ftp.gromacs.org/gromacs/gromacs-2025.4.tar.gz -O /tmp/gromacs.tar.gz && \
     tar xzf /tmp/gromacs.tar.gz -C /tmp && cd /tmp/gromacs-2025.4 && mkdir build && cd build && \
     cmake .. -DGMX_BUILD_OWN_FFTW=ON -DGMX_GPU=CUDA -DGMX_MPI=ON -DGMX_SIMD=AVX2_256 \
-    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs -DGMX_CUDA_TARGET_SM="89;90;120" && \
+    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs -DGMX_CUDA_TARGET_SM="86;89;90;120" && \
     make -j$(nproc) && make install && rm -rf /tmp/gromacs* 
 
 # 8. CONFIGURACIÓN FINAL
@@ -147,5 +147,9 @@ RUN printf '%s\n' "#!/bin/bash" \
     && chmod +x /usr/local/bin/chemlink.wrap \
     && ln -sf /usr/local/bin/chemlink.wrap /usr/local/bin/chemlink
 
+# Al final del Dockerfile, antes de CMD/ENTRYPOINT
+RUN chmod 777 /app/chemlink/data/input/dynamics -R
+# O correr como root por defecto
+USER root
 # Default to an interactive shell so the CLI is available via bashrc
 CMD ["/bin/bash"]
