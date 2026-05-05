@@ -33,6 +33,13 @@ class LigandTopologyStep:
                 raise RuntimeError("Falló la conversión del ligando a PDB.")
         else:
             shutil.copy(self.ligand_pdb, internal_pdb)
+        
+        with open(internal_pdb, 'r') as f:
+            content = f.readlines()
+            # Verifica que el archivo no esté vacío y tenga coordenadas
+            has_atoms = any(line.startswith(("ATOM", "HETATM")) for line in content)
+            if not has_atoms:
+                raise RuntimeError(f"El archivo {internal_pdb} se generó vacío o sin átomos. Revisa el PDBQT original.")
 
         # Ejecutar ACPYPE
         acpype_cmd = [

@@ -53,11 +53,17 @@ def check_gmx_installation(): # Verifica si gmx o gmx_mpi están disponibles en 
     )
 
 def convert_pdbqt_to_pdb(input_path, output_path):
-    # -h: añade hidrógenos según pH 7.0
-    # --error 0: silencia warnings no críticos
-    obabel_cmd = ["obabel", input_path, "-O", output_path, "-h", "--error", "0"]
+    obabel_cmd = [
+        "obabel", "-ipdbqt", input_path, 
+        "-opdb", "-O", output_path, 
+        "-m", 
+        "-h", 
+        "--resname", "LIG", 
+        "--error", "0"
+    ]
     
     try:
+        # Importante: No pases input_path como argumento suelto, ya va en los flags
         result = subprocess.run(obabel_cmd, check=True, capture_output=True, text=True)
         return True
     except subprocess.CalledProcessError as e:
