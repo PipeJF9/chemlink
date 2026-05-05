@@ -66,12 +66,28 @@ class DockingPipeline:
 
 	@property
 	def prepared_receptor_path(self) -> str:
-		"""Return the output directory used by receptor preparation."""
+		"""Return the output directory used by receptor preparation.
+		
+		If the receptor_input_path contains .pdbqt files, it's treated as already-prepared
+		receptors (useful when starting from a later step in the pipeline).
+		Otherwise, return the standard output path for prepared receptors.
+		"""
+		# Check if receptor_input_path already contains prepared receptors
+		if list_files_in_directory(self.receptor_input_path, ["*.pdbqt"]):
+			return self.receptor_input_path
 		return f"{self.output_path}/prepared_receptors_pdbqt"
 
 	@property
 	def prepared_ligand_path(self) -> str:
-		"""Return the output directory used by ligand preparation."""
+		"""Return the output directory used by ligand preparation.
+		
+		If the ligand_input_path contains .pdbqt files, it's treated as already-prepared
+		ligands (useful when starting from a later step in the pipeline).
+		Otherwise, return the standard output path for prepared ligands.
+		"""
+		# Check if ligand_input_path already contains prepared ligands
+		if list_files_in_directory(self.ligand_input_path, ["*.pdbqt"]):
+			return self.ligand_input_path
 		return f"{self.output_path}/prepared_ligands_pdbqt"
 
 	def _build_receptor_preparation(self) -> ReceptorPreparation:
