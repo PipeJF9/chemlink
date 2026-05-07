@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-"""
-MM-PBSA Analysis para PROTEINA-PROTEINA (Sistema con 2 cadenas proteicas)
-===========================================================================
-
-Sistema: Dos cadenas proteicas (A y B)
-Analisis: Calcula la energia de union entre las dos proteinas
-
-La energia de union se calcula como:
-  ΔG_binding = E(Proteina_A + Proteina_B) - E(Proteina_A) - E(Proteina_B)
-
-NOTA: Este script IGNORA cofactores, ligandos pequeños y otros elementos.
-      Solo analiza la interaccion entre las dos cadenas proteicas principales.
-
-Uso:
-  python3 run_mmpbsa_for_pp_with_ligand.py -d <results_dir>
-"""
-
 import os
 import subprocess
 import logging
@@ -28,14 +10,13 @@ class MMPBSAPPLigandAnalyzer:
         self.results_dir = Path(results_dir)
         self.gmx_bin = gmx_bin
         self.n_cores = n_cores
-        self.output_dir = self.results_dir / 'analisis_binding_energy' / 'gmx_MMPBSA'
+        self.output_dir = self.results_dir / 'binding_energy_analysis' / 'gmx_MMPBSA'
 
     def _detect_protein_chains(self, pdb_file: Path):
-        """Detecta las dos cadenas proteicas principales basado en el número de residuos."""
         chains_info = {}
         with open(pdb_file, 'r') as f:
             for line in f:
-                if line.startswith('ATOM'): # Solo registros ATOM
+                if line.startswith('ATOM'):
                     chain = line[21] if len(line) > 21 else ' '
                     if chain.strip():
                         if chain not in chains_info:
@@ -44,10 +25,10 @@ class MMPBSAPPLigandAnalyzer:
                         res_seq = line[22:26].strip()
                         chains_info[chain]['atoms'].append(atom_num)
                         chains_info[chain]['residues'].add(res_seq)
+
         return sorted(chains_info.items(), key=lambda x: len(x[1]['residues']), reverse=True)
 
     def _get_atom_indices_for_chain(self, pdb_file: Path, chain_id: str):
-        """Extrae los índices de átomos para una cadena específica[cite: 19]."""
         indices = []
         with open(pdb_file, 'r') as f:
             for line in f:
@@ -56,7 +37,6 @@ class MMPBSAPPLigandAnalyzer:
         return sorted(indices)
 
     def _create_index_file(self, pdb_file: Path, output_ndx: Path) -> bool:
-        """Crea el archivo index.ndx con los grupos Protein y Other[cite: 18, 19]."""
         sorted_chains = self._detect_protein_chains(pdb_file)
         if len(sorted_chains) < 2:
             return False
@@ -76,14 +56,12 @@ class MMPBSAPPLigandAnalyzer:
         return True
 
     def run_analysis(self, use_pb: bool = True) -> bool:
-        """Ejecuta el flujo de gmx_MMPBSA en modo serial[cite: 19]."""
         pdb_file = self.results_dir / 'md.pdb'
         index_file = self.results_dir / 'index.ndx'
         
         if not self._create_index_file(pdb_file, index_file):
             return False
 
-        # Configuración serial: use_mpi=False como solicitaste[cite: 19]
         analyzer = GMX_MMPBSA_Analyzer(
             results_dir=str(self.results_dir),
             gmx_bin=self.gmx_bin,

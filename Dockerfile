@@ -10,7 +10,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # Priorizamos el PATH de Conda para ACPYPE, pero mantenemos GROMACS y CUDA
     PATH=/opt/miniconda/envs/bio/bin:/opt/miniconda/bin:/usr/local/gromacs/bin:/usr/local/bin:/usr/local/cuda/bin:${PATH} \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
-    GMXRC=/usr/local/gromacs/bin/GMXRC
+    GMXRC=/usr/local/gromacs/bin/GMXRC \
+    PYTHONUNBUFFERED=1
 
 # 2. DEPENDENCIAS DEL SISTEMA (Unificado)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -113,14 +114,15 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.2
 WORKDIR /app/chemlink
 COPY . .
 
-# INSTALAMOS gmx_MMPBSA y dependencias en el entorno 'bio'
+# INSTALAMOS gmx_MMPBSA y dependencias en el entorno 'bio' (UNA SOLA VEZ)
 RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir \
     biopython \
     numpy \
     pandas \
     matplotlib \
-    gmx_MMPBSA 
+    gmx_MMPBSA
 
+# Source GMXRC en bash
 RUN echo "source /usr/local/gromacs/bin/GMXRC" >> /etc/bash.bashrc
 
 # Instalar el paquete del proyecto en el entorno `bio` para exponer el CLI

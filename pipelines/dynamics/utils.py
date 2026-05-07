@@ -1,15 +1,27 @@
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
+import multiprocessing
+from datetime import datetime
 
-def calculate_nsteps(ns_time, dt=0.002): # Convierte nanosegundos a pasos de GROMACS.
+def calculate_nsteps(ns_time, dt=0.002):
     # 1 ns = 1000 ps. nsteps = (ns * 1000) / dt
     ps_time = ns_time * 1000
     nsteps = int(ps_time / dt)
     return nsteps
 
-def update_md_nsteps(mdp_path, nsteps): #Actualiza valor de nsteps para producción.
+def setup_work_directory(base_output_path: str, sim_type_name: str) -> str:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder_name = f"run_{sim_type_name}_{timestamp}"
+    
+    work_dir = Path(base_output_path) / folder_name
+    work_dir.mkdir(parents=True, exist_ok=True)
+    
+    return str(work_dir.absolute())
+
+def update_md_nsteps(mdp_path, nsteps):
 
     if not os.path.exists(mdp_path): # revisa la existencia del archivo MDP
         print(f"[Error] No se encontró el archivo MDP en: {mdp_path}")
@@ -40,11 +52,9 @@ def update_md_nsteps(mdp_path, nsteps): #Actualiza valor de nsteps para producci
     print(f"[✓] Archivo {os.path.basename(mdp_path)} actualizado a {nsteps} pasos.")
     return True
 
-def check_gmx_installation(): # Verifica si gmx o gmx_mpi están disponibles en el sistema
-    # Priorizamos gmx_mpi
+def check_gmx_installation():
     for binary in ["gmx_mpi", "gmx"]:
         if shutil.which(binary):
-            print(f"[✓] GROMACS detectado: {binary}")
             return binary
 
     raise EnvironmentError(
@@ -53,9 +63,15 @@ def check_gmx_installation(): # Verifica si gmx o gmx_mpi están disponibles en 
     )
 
 def convert_pdbqt_to_pdb(input_path, output_path):
-    # -h: añade hidrógenos según pH 7.0
-    # --error 0: silencia warnings no críticos
-    obabel_cmd = ["obabel", input_path, "-O", output_path, "-h", "--error", "0"]
+    obabel_cmd = [
+        "obabel", 
+        "-ipdbqt", input_path, 
+        "-opdb", "-O", output_path, 
+        "-h",
+        "-p", "7.0", 
+        "--gen3d",                
+        "--resname", "LIG"    
+    ]
     
     try:
         result = subprocess.run(obabel_cmd, check=True, capture_output=True, text=True)
@@ -63,3 +79,11 @@ def convert_pdbqt_to_pdb(input_path, output_path):
     except subprocess.CalledProcessError as e:
         print(f"(!) Error en OpenBabel: {e.stderr}")
         return False
+
+def get_system_threads():
+    try:
+        # Best for Linux: returns threads allowed for this specific process
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, NotImplementedError):
+        # Fallback for Windows/macOS or systems without affinity support
+        return multiprocessing.cpu_count()

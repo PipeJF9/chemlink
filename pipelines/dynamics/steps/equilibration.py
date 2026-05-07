@@ -1,25 +1,25 @@
 import subprocess
 import os
+from tqdm import tqdm
+
+from ..logger import get_step_logger
 
 class EquilibrationStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
-        
-        # Entradas
         self.em_gro = os.path.join(self.config["work_dir"], "em.gro")
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         
-        # Salidas NVT
         self.nvt_mdp = os.path.join(self.config["work_dir"], "nvt.mdp")
         self.nvt_tpr = os.path.join(self.config["work_dir"], "nvt.tpr")
         self.nvt_gro = os.path.join(self.config["work_dir"], "nvt.gro")
         self.nvt_cpt = os.path.join(self.config["work_dir"], "nvt.cpt")
         
-        # Salidas NPT
         self.npt_mdp = os.path.join(self.config["work_dir"], "npt.mdp")
         self.npt_tpr = os.path.join(self.config["work_dir"], "npt.tpr")
         self.npt_gro = os.path.join(self.config["work_dir"], "npt.gro")
+        self.logger = get_step_logger(__name__, os.path.join(self.config["work_dir"], "simulation.log"))
 
     def _create_nvt_mdp(self):
         mdp_content = (
@@ -91,59 +91,66 @@ class EquilibrationStep:
             f.write(mdp_content)
 
     def run(self):
-        print("\n[*] Paso 5: Equilibración del sistema...")
+        with tqdm(total=4, desc="  └─ System Equilibration", leave=False) as pbar:
+            try:
+                # PHASE 1: NVT
+                self._create_nvt_mdp()
+                grompp_nvt = [
+                    self.gmx_bin, "grompp", 
+                    "-f", self.nvt_mdp, 
+                    "-c", self.em_gro, 
+                    "-r", self.em_gro, 
+                    "-p", self.topol, 
+                    "-o", self.nvt_tpr,
+                    "-maxwarn", "10"
+                ]
+                subprocess.run(grompp_nvt, check=True, capture_output=True, text=True)
+                pbar.update(1)
+                mdrun_nvt = [
+                    self.gmx_bin, "mdrun", 
+                    "-v",
+                    "-deffnm", "nvt", 
+                    "-ntomp", str(self.config.get("threads", 8)),
+                    "-pin", "on",
+                    "-nb", "gpu",       
+                    "-pme", "gpu",      
+                    "-update", "gpu"
+                    ]
+                subprocess.run(mdrun_nvt, check=True, capture_output=True, text=True, cwd=self.config["work_dir"])
+                pbar.update(1)
 
-        # FASE 1: NVT
-        print("   -> Iniciando fase NVT (Estabilización de Temperatura)...")
-        self._create_nvt_mdp()
-        
-        grompp_nvt = [
-            self.gmx_bin, "grompp", 
-            "-f", self.nvt_mdp, 
-            "-c", self.em_gro, 
-            "-r", self.em_gro, 
-            "-p", self.topol, 
-            "-o", self.nvt_tpr,
-            "-maxwarn", "10"
-            ]
-        subprocess.run(grompp_nvt, check=True, capture_output=True, text=True)
-        
-        mdrun_nvt = [
-            self.gmx_bin, "mdrun", 
-            "-v",
-            "-deffnm", "nvt", 
-            "-ntomp", str(self.config.get("threads", 8)),
-            "-nb", "gpu",       
-            "-pme", "gpu",      
-            "-update", "gpu"
-            ]
-        subprocess.run(mdrun_nvt, check=True, cwd=self.config["work_dir"])
+                # PHASE 2: NPT
+                self._create_npt_mdp()
+                grompp_npt = [
+                    self.gmx_bin, "grompp", 
+                    "-f", self.npt_mdp, 
+                    "-c", self.nvt_gro, 
+                    "-r", self.nvt_gro, 
+                    "-t", self.nvt_cpt,
+                    "-p", self.topol, 
+                    "-o", self.npt_tpr,
+                    "-maxwarn", "10"
+                    ]
+                subprocess.run(grompp_npt, check=True, capture_output=True, text=True)
+                pbar.update(1)
+                mdrun_npt = [
+                    self.gmx_bin, "mdrun", 
+                    "-v",
+                    "-deffnm", "npt", 
+                    "-ntomp", str(self.config.get("threads", 8)),
+                    "-pin", "on",
+                    "-nb", "gpu",       
+                    "-pme", "gpu",      
+                    "-update", "gpu"
+                    ]
+                subprocess.run(mdrun_npt, check=True, capture_output=True, text=True, cwd=self.config["work_dir"])
+                pbar.update(1)
 
-        # FASE 2: NPT
-        print(f"   -> Iniciando fase NPT (Estabilización de Presión) {str(self.config.get('threads', 8))}")
-        self._create_npt_mdp()
-        
-        grompp_npt = [
-            self.gmx_bin, "grompp", 
-            "-f", self.npt_mdp, 
-            "-c", self.nvt_gro, 
-            "-r", self.nvt_gro, 
-            "-t", self.nvt_cpt,
-            "-p", self.topol, 
-            "-o", self.npt_tpr,
-            "-maxwarn", "10"
-            ]
-        subprocess.run(grompp_npt, check=True, capture_output=True, text=True)
-        
-        mdrun_npt = [
-            self.gmx_bin, "mdrun", 
-            "-v",
-            "-deffnm", "npt", 
-            "-ntomp", str(self.config.get("threads", 8)),
-            "-nb", "gpu",       
-            "-pme", "gpu",      
-            "-update", "gpu"
-            ]
-        subprocess.run(mdrun_npt, check=True, cwd=self.config["work_dir"])
-
-        print(f"[✓] Equilibración completada. Sistema listo para producción.")
+                if not os.path.exists(self.npt_gro):
+                    raise FileNotFoundError("Equilibration finished but output file was not found.")
+            except subprocess.CalledProcessError as e:
+                self.logger.exception("Equilibration Error:\n%s", e.stderr)
+                raise e
+            except Exception as e:
+                self.logger.exception("Unexpected Error in EquilibrationStep")
+                raise e
