@@ -1,7 +1,10 @@
 import subprocess
 import os
 import shutil
+from tqdm import tqdm
 from pipelines.dynamics.utils import convert_pdbqt_to_pdb
+
+from ..logger import get_step_logger
 
 class LigandTopologyStep:
     def __init__(self, config, gmx_bin):
@@ -9,69 +12,85 @@ class LigandTopologyStep:
         self.gmx_bin = gmx_bin
         self.work_dir = self.config["work_dir"]
         
-        # Archivos de entrada
         self.ligand_pdb = os.path.abspath(self.config["ligand_pdb"])
         self.protein_gro = os.path.join(self.work_dir, "processed.gro")
         self.topol_file = os.path.join(self.work_dir, "topol.top")
         
-        # Carga y directorio temporal
         self.charge = self.config.get("ligand_charge", 0)
         self.acpype_workdir = os.path.join(self.work_dir, "acpype_work")
+        self.logger = get_step_logger(__name__, os.path.join(self.work_dir, "simulation.log"))
 
     def run(self):
-        print(f"\n[*] Paso 1.5: Procesamiento de Ligando Pequeño (Carga: {self.charge})")
-        
-        if not os.path.exists(self.acpype_workdir):
-            os.makedirs(self.acpype_workdir)
-        
-        internal_pdb = os.path.join(self.acpype_workdir, "ligand.pdb")
-        
-        if self.ligand_pdb.lower().endswith(".pdbqt"):
-            print("   -> Detectado PDBQT. Convirtiendo a PDB con OpenBabel...")
-            success = convert_pdbqt_to_pdb(self.ligand_pdb, internal_pdb)
-            if not success:
-                raise RuntimeError("Falló la conversión del ligando a PDB.")
-        else:
-            shutil.copy(self.ligand_pdb, internal_pdb)
-        
-        with open(internal_pdb, 'r') as f:
-            content = f.readlines()
-            # Verifica que el archivo no esté vacío y tenga coordenadas
-            has_atoms = any(line.startswith(("ATOM", "HETATM")) for line in content)
-            if not has_atoms:
-                raise RuntimeError(f"El archivo {internal_pdb} se generó vacío o sin átomos. Revisa el PDBQT original.")
+        with tqdm(total=5, desc="  └─ Ligand Topology Generation", leave=False) as pbar:
+            try:
+                if not os.path.exists(self.acpype_workdir):
+                    os.makedirs(self.acpype_workdir)
+                internal_pdb = os.path.join(self.acpype_workdir, "ligand.pdb")
+                # Format Conversion
+                if self.ligand_pdb.lower().endswith(".pdbqt"):
+                    success = convert_pdbqt_to_pdb(self.ligand_pdb, internal_pdb)
+                    if not success:
+                        self.logger.error("Failed to convert %s to PDB using OpenBabel.", self.ligand_pdb)
+                        raise RuntimeError("Failed to convert ligand PDBQT to PDB.")
+                else:
+                    try:
+                        shutil.copy(self.ligand_pdb, internal_pdb)
+                    except FileNotFoundError:
+                        self.logger.error("Source ligand file not found: %s", self.ligand_pdb)
+                        raise
 
-        # Ejecutar ACPYPE
-        acpype_cmd = [
-            "acpype", "-i", "ligand.pdb",
-            "-b", "LIG", "-c", "bcc",
-            "-n", str(self.charge), "-a", "gaff2"
-        ]
-        
-        try:
-            subprocess.run(acpype_cmd, check=True, cwd=self.acpype_workdir)
-        except Exception as e:
-            print(f"[X] Error en ACPYPE: {e}")
-            raise e
+                pbar.update(1)
 
-        acpype_out_folder = ""
-        for d in os.listdir(self.acpype_workdir):
-            if d.endswith(".acpype"):
-                acpype_out_folder = os.path.join(self.acpype_workdir, d)
-                break
-        
-        if not acpype_out_folder:
-            raise FileNotFoundError("No se encontró la carpeta de salida de ACPYPE")
+                # Ensure the expected internal PDB was actually created
+                if not os.path.exists(internal_pdb):
+                    self.logger.error("Expected internal PDB not found after conversion/copy: %s", internal_pdb)
+                    raise FileNotFoundError(f"Expected file not found: {internal_pdb}")
 
-        acpype_gro = os.path.join(acpype_out_folder, "LIG_GMX.gro")
-        acpype_itp = os.path.join(acpype_out_folder, "LIG_GMX.itp")
-        
-        # Procesamiento de archivos
-        self._clean_ligand_itp(acpype_itp)
-        self._merge_gro(self.protein_gro, acpype_gro)
-        self._patch_topology(acpype_itp)
+                with open(internal_pdb, 'r') as f:
+                    content = f.readlines()
+                    has_atoms = any(line.startswith(("ATOM", "HETATM")) for line in content)
+                    if not has_atoms:
+                        raise RuntimeError(
+                            f"The file {internal_pdb} was generated empty or without atoms. "
+                            "Please check the original PDBQT file.")
+                    
+                # Step 2: Running ACPYPE
+                acpype_cmd = [
+                    "acpype", "-i", "ligand.pdb",
+                    "-b", "LIG", "-c", "bcc",
+                    "-n", str(self.charge), "-a", "gaff2"
+                ]
 
-        print(f"[✓] Ligando integrado: complex.gro")
+                subprocess.run(acpype_cmd, check=True, capture_output=True, text=True, cwd=self.acpype_workdir)
+                pbar.update(1)
+
+                acpype_out_folder = next((os.path.join(self.acpype_workdir, d) 
+                                       for d in os.listdir(self.acpype_workdir) 
+                                       if d.endswith(".acpype")), None)
+                
+                if not acpype_out_folder:
+                    raise FileNotFoundError("ACPYPE output directory was not found.")
+
+                acpype_gro = os.path.join(acpype_out_folder, "LIG_GMX.gro")
+                acpype_itp = os.path.join(acpype_out_folder, "LIG_GMX.itp")
+                
+                self._clean_ligand_itp(acpype_itp)
+                pbar.update(1)
+                self._merge_gro(self.protein_gro, acpype_gro)
+                pbar.update(1)
+                self._patch_topology(acpype_itp)
+                pbar.update(1)
+            except subprocess.CalledProcessError as e:
+                # capture stderr from ACPYPE and log it
+                stderr = getattr(e, 'stderr', None)
+                if stderr:
+                    self.logger.exception("ACPYPE Execution Error: %s", stderr)
+                else:
+                    self.logger.exception("ACPYPE Execution Error: %s", e)
+                raise
+            except Exception as e:
+                self.logger.exception("Unexpected error in LigandTopologyStep: %s", e)
+                raise
 
     def _clean_ligand_itp(self, itp_path):
         with open(itp_path, 'r') as f:
@@ -127,32 +146,27 @@ class LigandTopologyStep:
         itp_included = False
 
         for line in top_lines:
-            # 1. Insertar atomtypes justo después del forcefield (inicio del archivo)
             if "forcefield.itp" in line and not types_inserted:
                 new_top.append(line)
-                new_top.append("\n; Atomtypes extraídos del ligando (GAFF2)\n")
+                new_top.append("\n; Ligand-specific atomtypes (GAFF2)\n")
                 new_top.extend(atomtypes)
                 new_top.append("\n")
                 types_inserted = True
                 continue
 
-            # 2. Incluir el ITP del ligando antes de la sección de moléculas
             if "[ molecules ]" in line and not itp_included:
-                new_top.append("; Topología del ligando\n")
+                new_top.append("; Include ligand topology\n")
                 new_top.append('#include "ligand.itp"\n\n')
                 new_top.append(line)
                 itp_included = True
                 continue
-            
-            # Evitar repetir la línea de LIG si ya existe por un error previo
+
             if line.strip() == "LIG                1":
                 continue
 
             new_top.append(line)
         
-        # 3. Añadir el ligando a la lista final de moléculas
         if not any("LIG" in l for l in top_lines[-5:]):
             new_top.append(f"LIG                1\n")
-
         with open(self.topol_file, 'w') as f:
             f.writelines(new_top)

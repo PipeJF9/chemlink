@@ -1,19 +1,20 @@
 import subprocess
 import os
+from tqdm import tqdm
+
+from ..logger import get_step_logger
 
 class EnergyMinStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
-        
-        # Entradas
         self.input_gro = os.path.join(self.config["work_dir"], "ionized.gro")
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         
         self.em_mdp = os.path.join(self.config["work_dir"], "em.mdp")
         self.em_tpr = os.path.join(self.config["work_dir"], "em.tpr")
         self.em_gro = os.path.join(self.config["work_dir"], "em.gro")
-        # em_log = os.path.join(self.config["work_dir"], "em.log") lo quitamos porque gmx mdrun ya lo genera automáticamente
+        self.logger = get_step_logger(__name__, os.path.join(self.config["work_dir"], "simulation.log"))
 
     def _create_em_mdp(self):
         mdp_content = (
@@ -33,10 +34,8 @@ class EnergyMinStep:
             f.write(mdp_content)
 
     def run(self):
-        print("\n[*] Paso 4: Minimización de Energía (EM)...")
         self._create_em_mdp()
-
-        # 1. grompp
+        # 1. Prepare TPR
         grompp_cmd = [
             self.gmx_bin, "grompp",
             "-f", self.em_mdp,
@@ -45,26 +44,28 @@ class EnergyMinStep:
             "-o", self.em_tpr,
             "-maxwarn", "10"
         ]
-
-        # 2. mdrun
+        # 2. Optimized Energy Minimization
         mdrun_cmd = [
             self.gmx_bin, "mdrun",
             "-v", 
             "-deffnm", "em",
-            "-ntomp", str(self.config.get("threads", 8)),  # tomamos el número de threads del config, con un default de 8
+            "-ntomp", str(self.config.get("threads", 8)),
+            "-pin", "on",
             "-nb", "gpu",       
         ]
 
-        try:
-            print("   -> Preparando sistema...")
-            subprocess.run(grompp_cmd, check=True, capture_output=True, text=True)
+        with tqdm(total=2, desc="  └─ Energy Minimization", leave=False) as pbar:
+            try:
+                subprocess.run(grompp_cmd, check=True, capture_output=True, text=True)
+                pbar.update(1)
+                subprocess.run(mdrun_cmd, check=True, capture_output=True, text=True, cwd=self.config["work_dir"])
+                pbar.update(1)
 
-            print("   -> Minimizando (revisar em.log para detalles)...")
-            subprocess.run(mdrun_cmd, check=True, cwd=self.config["work_dir"])
-
-            if os.path.exists(self.em_gro):
-                print(f"[✓] Estructura minimizada en: {os.path.basename(self.em_gro)}")
-            
-        except subprocess.CalledProcessError as e:
-            print(f"[X] Error en el Paso 4!")
-            raise e
+                if not os.path.exists(self.em_gro):
+                    raise FileNotFoundError("Minimization finished but output file was not found.")    
+            except subprocess.CalledProcessError as e:
+                self.logger.exception("Energy Minimization Error:\n%s", e.stderr)
+                raise e
+            except Exception as e:
+                self.logger.exception("Unexpected Error in EnergyMinStep")
+                raise e

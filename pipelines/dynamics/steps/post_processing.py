@@ -1,76 +1,71 @@
 import subprocess
 import os
+from tqdm import tqdm
+
+from ..logger import get_step_logger
 
 class PostProcessingStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
         
-        # Archivos de salida
         self.final_xtc = os.path.join(self.config["work_dir"], "md_center.xtc")
-        self.rel_seg_dir = "trayectorias_segmentadas"
+        self.rel_seg_dir = "segmented_trajectories"
         self.segment_dir = os.path.join(self.config["work_dir"], self.rel_seg_dir)
+        self.logger = get_step_logger(__name__, os.path.join(self.config["work_dir"], "simulation.log"))
 
     def run(self):
-        print("\n[*] Paso 7: Post-procesamiento (Limpieza de PBC e Índices)...")
         if not os.path.exists(self.segment_dir):
             os.makedirs(self.segment_dir)
 
-        # 1. Correción de PBC y centrado
-        center_cmd = [
-            self.gmx_bin, "trjconv",
-            "-s", "md.tpr", "-f", "md.xtc",
-            "-o", "md_center.xtc",
-            "-center", "-pbc", "mol", "-ur", "compact"
-        ]
-
-        # 2. Generar PDB final para análisis
-        sim_time_ps = int(float(self.config["ns_time"]) * 1000)
-        dump_pdb_cmd = [
-            self.gmx_bin, "trjconv",
-            "-s", "md.tpr", "-f", "md_center.xtc",
-            "-o", "md.pdb", "-dump", str(sim_time_ps)
-        ]
-
-        try:
-            print(f"   -> Centrando y corrigiendo PBC...")
-            subprocess.run(center_cmd, input="1\n0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
-
-            print(f"   -> Extrayendo estructura final a {sim_time_ps} ps...")
+        with tqdm(total=4, desc="  └─ Post-Processing & Cleanup", leave=False) as pbar:
             try:
-                subprocess.run(dump_pdb_cmd, input="0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
-            except subprocess.CalledProcessError:
-                print("      (!) Tiempo exacto no disponible, usando último frame...")
-                fallback_cmd = [self.gmx_bin, "trjconv", "-s", "md.tpr", "-f", "md_center.xtc", "-o", "md.pdb", "-dump", "-1"]
-                subprocess.run(fallback_cmd, input="0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
 
-            self._generate_smart_index()
+                # Step 1: PBC Correction & Centering
+                center_cmd = [
+                    self.gmx_bin, "trjconv",
+                    "-s", "md.tpr", "-f", "md.xtc",
+                    "-o", "md_center.xtc",
+                    "-center", "-pbc", "mol", "-ur", "compact"
+                ]
+                subprocess.run(center_cmd, input="1\n0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
+                pbar.update(1)
 
-            self._extract_segments(sim_time_ps)
+                # Step 2: Final Structure Extraction (PDB)
+                sim_time_ps = int(float(self.config["ns_time"]) * 1000)
+                dump_pdb_cmd = [
+                    self.gmx_bin, "trjconv",
+                    "-s", "md.tpr", "-f", "md_center.xtc",
+                    "-o", "md.pdb", "-dump", str(sim_time_ps)
+                ]
+                try:
+                    subprocess.run(dump_pdb_cmd, input="0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
+                except subprocess.CalledProcessError:
+                    fallback_cmd = [self.gmx_bin, "trjconv", "-s", "md.tpr", "-f", "md_center.xtc", "-o", "md.pdb", "-dump", "-1"]
+                    subprocess.run(fallback_cmd, input="0\n", text=True, check=True, capture_output=True, cwd=self.config["work_dir"])
+                pbar.update(1)
 
-            print("[✓] Post-procesamiento finalizado con éxito.")
-
-        except subprocess.CalledProcessError as e:
-            print(f"[X] Error en trjconv:\n{e.stderr}")
-            raise e
-
+                self._generate_smart_index()
+                pbar.update(1)
+                self._extract_segments(sim_time_ps)
+                pbar.update(1)
+            except subprocess.CalledProcessError as e:
+                self.logger.exception("Post-processing Error (trjconv):\n%s", e.stderr)
+                raise e
+            except Exception as e:
+                self.logger.exception("Unexpected error in PostProcessingStep")
+                raise e
+            
     def _generate_smart_index(self):
         sim_type = self.config.get("sim_type")
-        print(f"   -> Configurando índice para Opción {sim_type}...")
 
-        if sim_type == "2": # Proteína-Ligando
+        if sim_type == "2": # Protein-Ligand
             make_ndx_input = "1 | 13\nname 22 Protein_Ligand\nq\n"
-        
-        elif sim_type == "4": # Ácido Nucleico
+        elif sim_type == "4": # Nucleic Acids
             make_ndx_input = "r DNA RNA DR DNA5 DNA3\nname 22 Nucleic_Acid\n1 | 22\nname 23 Complex\nq\n"
-            print("      [i] Identificando grupos de Ácidos Nucleicos...")
-
-        elif sim_type in ["3", "5"]: # Péptido o Proteína-Proteína
-            print("      [i] Creando índice separando cadenas mediante topología (splitres)...")
+        elif sim_type in ["3", "5"]: # Peptide or Protein-Protein
             make_ndx_input = "splitres 0\nq\n" 
-        
-        elif sim_type == "6": # Proteína-Proteína + Ligando
-            print("      [i] Creando índice para Proteína-Proteína + Ligando...")
+        elif sim_type == "6": # Protein-Protein + Ligand
             make_ndx_input = "splitres 0\n1 | 13\nname 22 Complex_System\nq\n"
         else:
             make_ndx_input = "q\n"
@@ -84,9 +79,8 @@ class PostProcessingStep:
                 check=True, 
                 cwd=self.config["work_dir"]
             )
-            print("      [✓] index.ndx generado correctamente.")
         except subprocess.CalledProcessError as e:
-            print(f"      [X] Error crítico al generar index.ndx:\n{e.stderr}")
+            self.logger.exception("Critical error while generating index.ndx:\n%s", e.stderr)
             raise e
 
     def _extract_segments(self, sim_time_ps):
@@ -95,7 +89,6 @@ class PostProcessingStep:
             (os.path.join(self.rel_seg_dir, "md_first_100ps.xtc"), "0", "100"),
             (os.path.join(self.rel_seg_dir, "md_last_10percent.xtc"), str(last_10_ps), str(sim_time_ps))
         ]
-        
         for out_file, start, end in segments:
             if sim_time_ps > float(start):
                 cmd = [self.gmx_bin, "trjconv", "-s", "md.tpr", "-f", "md_center.xtc", 

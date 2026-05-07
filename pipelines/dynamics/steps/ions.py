@@ -1,21 +1,22 @@
 import subprocess
 import os
+from tqdm import tqdm
+
+from ..logger import get_step_logger
 
 class IonsStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
-        
-        # Entrada: El archivo solvatado del paso anterior
         self.solvated_gro = os.path.join(self.config["work_dir"], "solvated.gro")
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         
-        # Salidas y Temporales
         self.ions_mdp = os.path.join(self.config["work_dir"], "ions.mdp")
         self.ions_tpr = os.path.join(self.config["work_dir"], "ions.tpr")
         self.ionized_gro = os.path.join(self.config["work_dir"], "ionized.gro")
+        self.logger = get_step_logger(__name__, os.path.join(self.config["work_dir"], "simulation.log"))
 
-    def _create_ions_mdp(self): # Crea el archivo mdp mínimo para que genion funcione
+    def _create_ions_mdp(self):
         mdp_content = (
             "integrator  = steep\n"
             "emtol       = 1000.0\n"
@@ -31,15 +32,10 @@ class IonsStep:
         )
         with open(self.ions_mdp, "w") as f:
             f.write(mdp_content)
-        print("   -> Archivo ions.mdp creado.")
 
-    def run(self):
-        print("\n[*] Paso 3: Neutralización (Añadiendo Iones)...")
-        
-        # 1. Crear MDP
+    def run(self):      
         self._create_ions_mdp()
-
-        # 2. Generar TPR con grompp
+        # Execution 1: Prepare TPR
         grompp_cmd = [
             self.gmx_bin, "grompp",
             "-f", self.ions_mdp,
@@ -48,9 +44,7 @@ class IonsStep:
             "-o", self.ions_tpr,
             "-maxwarn", "10"
         ]
-
-        # 3. Añadir Iones con genion
-        # Enviamos "13" que es el grupo SOL (agua) en Amber para ser reemplazado por iones PREGUNTAR
+        # Execution 2: Add Ions
         genion_cmd = [
             self.gmx_bin, "genion",
             "-s", self.ions_tpr,
@@ -61,22 +55,24 @@ class IonsStep:
             "-neutral"
         ]
 
-        try:
-            print("   -> Preparando sistema para iones...")
-            subprocess.run(grompp_cmd, check=True, capture_output=True, text=True)
+        with tqdm(total=3, desc="  └─ System Neutralization", leave=False) as pbar:
+            try:
+                subprocess.run(grompp_cmd, check=True, capture_output=True, text=True)
+                pbar.update(1)
 
-            print("   -> Neutralizando carga (reemplazando agua por NA/CL)...")
-            process = subprocess.Popen(genion_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            # "13" selecciona el grupo SOL para reemplazar
-            stdout, stderr = process.communicate(input="SOL\n")
-            
-            if process.returncode != 0:
-                print(stderr)
-                raise subprocess.CalledProcessError(process.returncode, genion_cmd, stderr)
-
-            print(f"[✓] Sistema neutralizado: {os.path.basename(self.ionized_gro)}")
-            print(f"[✓] Topología actualizada con iones en {os.path.basename(self.topol)}")
-            
-        except subprocess.CalledProcessError as e:
-            print(f"[X] Error en neutralización:\n{e.stderr}")
-            raise e
+                process = subprocess.Popen(genion_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stdout, stderr = process.communicate(input="SOL\n")# Automatically select 'SOL' group for replacement
+                if process.returncode != 0:
+                    self.logger.error("genion execution failed:\n%s", stderr)
+                    raise subprocess.CalledProcessError(process.returncode, genion_cmd, stderr)
+                pbar.update(1)
+                if not os.path.exists(self.ionized_gro):
+                    raise FileNotFoundError("GROMACS finished, but ionized file was not found.")
+                pbar.update(1)
+                
+            except subprocess.CalledProcessError as e:
+                self.logger.exception("Neutralization Error:\n%s", e.stderr)
+                raise e
+            except Exception as e:
+                self.logger.exception("Unexpected Error in IonsStep")
+                raise e

@@ -1,24 +1,24 @@
 import subprocess
 import os
+from tqdm import tqdm
+
+from ..logger import get_step_logger
 
 class ProductionStep:
     def __init__(self, config, gmx_bin):
         self.config = config
         self.gmx_bin = gmx_bin
-        
-        # Entradas 
         self.npt_gro = os.path.join(self.config["work_dir"], "npt.gro")
         self.npt_cpt = os.path.join(self.config["work_dir"], "npt.cpt")
         self.topol = os.path.join(self.config["work_dir"], "topol.top")
         
-        # Salidas
         self.md_mdp = os.path.join(self.config["work_dir"], "md.mdp")
         self.md_tpr = os.path.join(self.config["work_dir"], "md.tpr")
         self.output_base = "md"
+        self.logger = get_step_logger(__name__, os.path.join(self.config["work_dir"], "simulation.log"))
 
     def _create_production_mdp(self):
         ns_time = float(self.config["ns_time"])
-        # nsteps = (ns * 1000) / 0.002
         nsteps = int((ns_time * 1000) / 0.002)
         
         mdp_content = f"""
@@ -59,13 +59,8 @@ class ProductionStep:
             f.write(mdp_content.strip())
 
     def run(self):
-        print("\n[*] Paso 6: Dinámica de Producción (Simulación Real)...")
-
-        # 1. Crear el archivo de parámetros al vuelo
-        print(f"   -> Configurando parámetros para {self.config['ns_time']} ns...")
         self._create_production_mdp()
-
-        # 2. Generar el TPR
+        # Generating TPR
         grompp_cmd = [
             self.gmx_bin, "grompp",
             "-f", self.md_mdp,
@@ -76,25 +71,28 @@ class ProductionStep:
             "-maxwarn", "10"
         ]
 
-        # 3. Ejecutar mdrun
+        # Simulation
         mdrun_cmd = [
             self.gmx_bin, "mdrun",
             "-v",
             "-deffnm", self.output_base,
             "-ntomp", str(self.config.get("threads", 8)),
+            "-pin", "on",
             "-nb", "gpu",       
             "-pme", "gpu",      
             "-update", "gpu"
         ]
 
-        try:
-            print("   -> Preparando binario de simulación...")
-            subprocess.run(grompp_cmd, check=True, capture_output=True, text=True)
-
-            print(f"   -> Ejecutando dinámica... (Esto puede tardar)")
-            subprocess.run(mdrun_cmd, check=True, cwd=self.config["work_dir"])
-            print("[✓] Simulación de producción finalizada con éxito.")
-            
-        except subprocess.CalledProcessError as e:
-            print(f"[X] Error en la producción:\n{e.stderr}")
-            raise e
+        with tqdm(total=2, desc="  └─ Production Dynamics", leave=False) as pbar:
+            try:
+                subprocess.run(grompp_cmd, check=True, capture_output=True, text=True)
+                pbar.update(1)
+                subprocess.run(mdrun_cmd, check=True, capture_output=True, text=True, cwd=self.config["work_dir"])
+                pbar.update(1)
+                
+            except subprocess.CalledProcessError as e:
+                self.logger.exception("Production MD Error:\n%s", e.stderr)
+                raise e
+            except Exception as e:
+                self.logger.exception("Unexpected Error in ProductionStep")
+                raise e

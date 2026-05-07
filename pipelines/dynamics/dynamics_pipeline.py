@@ -2,11 +2,16 @@ import os
 
 from pipelines.dynamics.steps.ligand_topology import LigandTopologyStep
 from .utils import check_gmx_installation
+from tqdm import tqdm
 from .steps import ComplexBuilderStep,TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep, AnalysisStep
 
 class DynamicsPipeline:
     def __init__(self, config):
         """
+        # Prioridad 1: Slurm | Prioridad 2: Config CLI | Prioridad 3: Hardware local
+        assigned_cpus = os.environ.get("SLURM_CPUS_ON_NODE")
+        total_threads = int(assigned_cpus) if assigned_cpus else self.config.get("threads", os.cpu_count())
+
         config: Diccionario enviado por el CLI con:
                 - ns_time (float)
                 - pdb_input (str)
@@ -15,71 +20,69 @@ class DynamicsPipeline:
         """
         self.config = config
         self.gmx_bin = check_gmx_installation()
+        self.total_steps = 10
 
     def execute(self):
-        print("\n" + "="*50)
-        print("   INICIANDO ORQUESTADOR DE DINÁMICA: CHEMLINK   ")
+        print(f" CHEMLINK DYNAMICS ORCHESTRATOR: {self.config['sim_type_label'].upper()}")
         print("="*50)
 
+        pipeline_bar = tqdm(total=self.total_steps, desc="Overall Progress", unit="step")
         try:
             #'''
-            # 0. Unificación de archivos de entrada
+            # 0. COMPLEX BUILDING
             if self.config["sim_type"] in ["3", "4", "5", "6"]:
-                print("\n[*] Paso 0: Preparando complejo...")
                 comp = ComplexBuilderStep(self.config)
                 comp.run()
+            pipeline_bar.update(1)
 
-            # 1. Ejecutar Paso 1: Topología
-            print("\n[Paso 1/6] Generando Topología...")
+            # 1. TOPOLOGY
             topo = TopologyStep(self.config, self.gmx_bin)
             topo.run()
+            pipeline_bar.update(1)
 
-            # Lógica de ligando pequeño Opción 2
+            # 1.5 LIGAND TOPOLOGY
             if self.config["sim_type"] in ["2", "6"]:
                 ligand_step = LigandTopologyStep(self.config, self.gmx_bin)
                 ligand_step.run()
-                
                 self.config["current_gro"] = "complex.gro"
             else:
                 self.config["current_gro"] = "processed.gro"
-            # ---------------------------------
-
-            # 2. Ejecutar Paso 2: Solvatación
-            print("\n[Paso 2/6] Solvatando sistema...")
+            pipeline_bar.update(1)
+            # 2. SOLVATION
             solv = SolvationStep(self.config, self.gmx_bin)
             solv.run()
+            pipeline_bar.update(1)
 
-            # 3. Ejecutar Paso 3: Iones
-            print("\n[Paso 3/6] Añadiendo iones para neutralizar carga...")
+            # 3. IONS
             ions = IonsStep(self.config, self.gmx_bin)
             ions.run()
+            pipeline_bar.update(1)
 
-            # 4. Ejecutar Paso 4: Minimización de Energía
-            print("\n[Paso 4/6] Minimizando energía...")
+            # 4. ENERGY MINIMIZATION
             em = EnergyMinStep(self.config, self.gmx_bin)
             em.run()
+            pipeline_bar.update(1)
 
-            # 5. Ejecutar Paso 5: Equilibración
-            print("\n[Paso 5/6] Equilibrando sistema...")
+            # 5. EQUILIBRATION
             equil = EquilibrationStep(self.config, self.gmx_bin)
             equil.run()
+            pipeline_bar.update(1)
 
-            # 6. Ejecutar Paso 6: Producción
-            print("\n[Paso 6/6] Ejecutando simulación de producción...")
+            # 6. PRODUCTION
             prod = ProductionStep(self.config, self.gmx_bin)
             prod.run()
+            pipeline_bar.update(1)
 
-            # 7. Ejecutar Paso 7: Post-procesamiento
-            print("\n[Paso 7/7] Post-procesando resultados...")
+            # 7. POST-PROCESSING
             post_proc = PostProcessingStep(self.config, self.gmx_bin)
             post_proc.run()
+            pipeline_bar.update(1)
             #'''
-            # 8. Ejecutar Paso 8: Análisis
-            print("\n[Paso 8/8] Analizando resultados...")
+            # 8. ANALYSIS
             analysis = AnalysisStep(self.config, self.gmx_bin)
             analysis.run()
-            #'''
-            print("\n[✓] ¡Proceso de Dinámica finalizado con éxito!")
+            pipeline_bar.update(1)
+
         except Exception as e:
-            print(f"\n[X] ERROR CRÍTICO EN EL PIPELINE: {e}")
+            print(f"\n[X] CRITICAL ERROR : {e}")
             raise e

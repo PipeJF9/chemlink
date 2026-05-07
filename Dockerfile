@@ -121,8 +121,8 @@ RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir \
     matplotlib \
     gmx_MMPBSA
 
-# Source GMXRC en bash (UNA SOLA VEZ - antes estaba duplicado)
+# Source GMXRC en bash
 RUN echo "source /usr/local/gromacs/bin/GMXRC" >> /etc/bash.bashrc
 
-# Iniciamos con el Python de Conda activado para que ACPYPE no falle
-ENTRYPOINT ["/opt/miniconda/envs/bio/bin/python", "main.py"]
+# Python as entrypoint (allows running without 'chemlink' prefix from docker-compose)
+ENTRYPOINT ["/opt/miniconda/envs/bio/bin/python", "/app/chemlink/main.py"]

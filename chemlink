@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec /opt/miniconda/envs/bio/bin/python /app/chemlink/main.py "$@"
