@@ -1,14 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-PROJECT_PARENT="$(dirname "$SCRIPT_DIR")"
-
-if [[ -n "${PYTHONPATH:-}" ]]; then
-  export PYTHONPATH="$PROJECT_PARENT:$PYTHONPATH"
-else
-  export PYTHONPATH="$PROJECT_PARENT"
-fi
-
-exec python -m chemlink.cli.main "$@"
+REPO=/nfs/chemlink/chemlink
+export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+exec /nfs/chemlink/miniconda/envs/bio/bin/python -m chemlink.cli.main "$@"

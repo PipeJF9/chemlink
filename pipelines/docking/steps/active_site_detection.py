@@ -38,7 +38,7 @@ class ActiveSiteDetection:
 		"/usr/local/bin/fpocket",
 		"/usr/bin/fpocket",
 	)
-	DEFAULT_MGLTOOLS_PATH = "/opt/mgltools"
+	DEFAULT_MGLTOOLS_PATH = os.environ.get("MGLTOOLS_PATH", "/opt/mgltools")
 
 	def __init__(
 		self,

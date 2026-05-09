@@ -27,7 +27,10 @@ class ReceptorProcessor:
         "ACE", "NME",
     }
 
-    DEFAULT_MGLTOOLS_PATH = "/opt/mgltools"
+    DEFAULT_MGLTOOLS_PATH = os.environ.get(
+        "MGLTOOLS_PATH",
+        "/opt/mgltools"  # fallback para Docker
+    )
 
     def __init__(
         self,
@@ -51,6 +54,13 @@ class ReceptorProcessor:
             "AutoDockTools",
             "Utilities24",
             "prepare_receptor4.py",
+        )
+        self.prepare_ligand_script = os.path.join(
+            self.mgltools_path,
+            "MGLToolsPckgs",
+            "AutoDockTools",
+            "Utilities24",
+            "prepare_ligand4.py",
         )
 
     def _validate_mgltools(self) -> None:
@@ -138,6 +148,22 @@ class ReceptorProcessor:
                 residues[name] = residues.get(name, 0) + 1
         return residues
 
+    def _is_protein(self) -> bool:
+        """Detect if molecule is a standard protein."""
+        residues = self._get_residue_summary()
+        protein_residue_count = sum(
+            count for name, count in residues.items() 
+            if name in self.PROTEIN_RESIDUES
+        )
+        total_atoms = self.mol.NumAtoms()
+        
+        # Si tiene residuos de proteína, es proteína
+        if protein_residue_count > 0:
+            return True
+        
+        # Si tiene solo heteroátomos sin residuos, es molécula sintética
+        return False
+
     def _identify_atoms_to_remove(self):
         atoms_to_remove = []
         removed_info = {"water": 0, "ligand": 0, "ion": 0, "other": 0}
@@ -199,11 +225,15 @@ class ReceptorProcessor:
     def _run_prepare_receptor(self, input_pdb: str, output_pdbqt: str) -> None:
         self._validate_mgltools()
 
+        # Convert to absolute paths to avoid path resolution issues
+        abs_input_pdb = os.path.abspath(input_pdb)
+        abs_output_pdbqt = os.path.abspath(output_pdbqt)
+
         cmd = [
             self.mgltools_python,
             self.prepare_receptor_script,
-            "-r", input_pdb,
-            "-o", output_pdbqt,
+            "-r", abs_input_pdb,
+            "-o", abs_output_pdbqt,
             "-A", "hydrogens",
             "-U", "nphs_lps_waters_nonstdres",
         ]
@@ -221,44 +251,123 @@ class ReceptorProcessor:
             )
             logger.info(f"MGLTools success: {result.stdout}")
         except subprocess.CalledProcessError as exc:
-            logger.error(f"MGLTools failed: {exc}\nSTDERR: {exc.stderr}")
-            raise RuntimeError(
-                f"prepare_receptor4.py failed with code {exc.returncode}"
-            )
+            error_msg = f"prepare_receptor4.py failed with code {exc.returncode}\n"
+            if exc.stdout:
+                error_msg += f"STDOUT:\n{exc.stdout}\n"
+            if exc.stderr:
+                error_msg += f"STDERR:\n{exc.stderr}\n"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg.strip())
         except subprocess.TimeoutExpired:
             raise RuntimeError("MGLTools timed out after 300s")
 
-        if not os.path.isfile(output_pdbqt) or os.path.getsize(output_pdbqt) == 0:
-            raise RuntimeError(f"Output PDBQT empty or missing: {output_pdbqt}")
+        if not os.path.isfile(abs_output_pdbqt) or os.path.getsize(abs_output_pdbqt) == 0:
+            raise RuntimeError(f"Output PDBQT empty or missing: {abs_output_pdbqt}")
 
-        logger.info(f"Generated PDBQT: {output_pdbqt}")
+        logger.info(f"Generated PDBQT: {abs_output_pdbqt}")
+
+    def _run_prepare_ligand(self, input_pdb: str, output_pdbqt: str) -> None:
+        """Use prepare_ligand4.py for synthetic molecules (non-proteins)."""
+        self._validate_mgltools()
+
+        if not os.path.isfile(self.prepare_ligand_script):
+            raise FileNotFoundError(
+                f"prepare_ligand4.py not found: {self.prepare_ligand_script}"
+            )
+
+        # Convert to absolute paths to avoid path resolution issues
+        abs_input_pdb = os.path.abspath(input_pdb)
+        abs_output_pdbqt = os.path.abspath(output_pdbqt)
+        
+        if not os.path.isfile(abs_input_pdb):
+            raise FileNotFoundError(f"Input PDB file not found: {abs_input_pdb}")
+
+        cmd = [
+            self.mgltools_python,
+            self.prepare_ligand_script,
+            "-l", abs_input_pdb,
+            "-o", abs_output_pdbqt,
+            "-A", "hydrogens",
+            "-U", "lps",
+        ]
+
+        logger.info(f"Running prepare_ligand4.py for synthetic molecule: {' '.join(cmd)}")
+
+        try:
+            # Execute from the directory containing the input file
+            # This helps with path resolution in MGLTools scripts
+            cwd = os.path.dirname(abs_input_pdb)
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                env=self._get_mgltools_env(),
+                cwd=cwd,
+                check=True,
+                timeout=300,
+            )
+            logger.info(f"prepare_ligand4.py success: {result.stdout}")
+        except subprocess.CalledProcessError as exc:
+            error_msg = f"prepare_ligand4.py failed with code {exc.returncode}\n"
+            if exc.stdout:
+                error_msg += f"STDOUT:\n{exc.stdout}\n"
+            if exc.stderr:
+                error_msg += f"STDERR:\n{exc.stderr}\n"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg.strip())
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("MGLTools timed out after 300s")
+
+        if not os.path.isfile(abs_output_pdbqt) or os.path.getsize(abs_output_pdbqt) == 0:
+            raise RuntimeError(f"Output PDBQT empty or missing: {abs_output_pdbqt}")
+
+        logger.info(f"Generated PDBQT (synthetic molecule): {abs_output_pdbqt}")
 
     def prepare_receptor(self, receptor_file: str, output_path: str) -> str:
-        """Run receptor cleanup + MGLTools conversion and return output PDBQT path."""
+        """Run receptor cleanup + MGLTools conversion and return output PDBQT path.
+        
+        Handles both standard proteins (using prepare_receptor4.py) and synthetic
+        molecules like quitosano (using prepare_ligand4.py).
+        """
         base = find_compound_name(receptor_file)
         safe_base = base.replace(" ", "_").replace(",", "_")
-
-        clean_pdb = create_out_file(
-            f"{output_path}/clean_receptors",
-            f"{safe_base}_clean.pdb",
-        )
 
         self._read_receptor(receptor_file)
         residues = self._get_residue_summary()
         logger.info(f"Residues found: {residues}")
 
-        self._remove_non_protein()
-        self._save_clean_receptor(clean_pdb)
-        logger.info(f"Saved cleaned receptor to {clean_pdb}")
-
-        out_pdbqt = create_out_file(
-            f"{output_path}/prepared_receptors_pdbqt",
-            f"{safe_base}_clean.pdbqt",
-        )
-        self._run_prepare_receptor(clean_pdb, out_pdbqt)
-
-        if not self.keep_clean_pdb and os.path.exists(clean_pdb):
-            os.remove(clean_pdb)
-            logger.debug(f"Removed intermediate: {clean_pdb}")
+        is_protein = self._is_protein()
+        
+        if is_protein:
+            logger.info(f"Detected standard protein molecule - using prepare_receptor4.py")
+            
+            clean_pdb = create_out_file(
+                f"{output_path}/clean_receptors",
+                f"{safe_base}_clean.pdb",
+            )
+            
+            self._remove_non_protein()
+            self._save_clean_receptor(clean_pdb)
+            logger.info(f"Saved cleaned receptor to {clean_pdb}")
+            
+            out_pdbqt = create_out_file(
+                f"{output_path}/prepared_receptors_pdbqt",
+                f"{safe_base}_clean.pdbqt",
+            )
+            self._run_prepare_receptor(clean_pdb, out_pdbqt)
+            
+            if not self.keep_clean_pdb and os.path.exists(clean_pdb):
+                os.remove(clean_pdb)
+                logger.debug(f"Removed intermediate: {clean_pdb}")
+        else:
+            logger.info(f"Detected synthetic molecule (non-protein) - using prepare_ligand4.py")
+            # Para moléculas sintéticas, usar el PDB original directamente sin limpiar
+            
+            out_pdbqt = create_out_file(
+                f"{output_path}/prepared_receptors_pdbqt",
+                f"{safe_base}.pdbqt",
+            )
+            self._run_prepare_ligand(receptor_file, out_pdbqt)
 
         return out_pdbqt
