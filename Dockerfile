@@ -108,34 +108,14 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.2
 WORKDIR /app/chemlink
 COPY . .
 
-# Dependencias extra para el orquestador
-RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir biopython numpy || true
+# Dependencias Python del proyecto
+RUN /opt/miniconda/envs/bio/bin/python -m ensurepip && \
+    /opt/miniconda/envs/bio/bin/python -m pip install --no-cache-dir biopython numpy
 
 RUN echo "source /usr/local/gromacs/bin/GMXRC" >> /etc/bash.bashrc
 
-# Instalar el paquete del proyecto en el entorno `bio` para exponer el CLI
-# y los módulos (incluye módulos de dinámica si están en el repo).
-RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir -e . || true
+RUN printf '#!/usr/bin/env bash\nexport PYTHONPATH=/app:${PYTHONPATH:-}\nset +u; [ -f /usr/local/gromacs/bin/GMXRC ] && source /usr/local/gromacs/bin/GMXRC; set -u\nexec /opt/miniconda/envs/bio/bin/python -m chemlink.cli.main "$@"\n' \
+    > /usr/local/bin/chemlink \
+    && chmod +x /usr/local/bin/chemlink
 
-# Make `chemlink` available from ~/.local/bin inside the container
-RUN mkdir -p /root/.local/bin \
-     && (if [ -x /opt/miniconda/envs/bio/bin/chemlink ]; then \
-             ln -sf /opt/miniconda/envs/bio/bin/chemlink /root/.local/bin/chemlink; \
-         else \
-             ln -sf /app/chemlink/chemlink /root/.local/bin/chemlink; \
-         fi) \
-     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> /root/.bashrc
-
-ENV PATH="/root/.local/bin:${PATH}"
-
-# A small wrapper so `chemlink` can be invoked as a command without activating conda
-RUN printf '%s\n' "#!/bin/bash" \
-    "export PATH=/opt/miniconda/envs/bio/bin:\$PATH" \
-    "[ -f /usr/local/gromacs/bin/GMXRC ] && source /usr/local/gromacs/bin/GMXRC || true" \
-    "exec /opt/miniconda/envs/bio/bin/chemlink \"\$@\"" \
-    > /usr/local/bin/chemlink.wrap \
-    && chmod +x /usr/local/bin/chemlink.wrap \
-    && ln -sf /usr/local/bin/chemlink.wrap /usr/local/bin/chemlink
-
-# Default to an interactive shell so the CLI is available via bashrc
 CMD ["/bin/bash"]
