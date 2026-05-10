@@ -27,9 +27,11 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
 # 4. ENTORNO 'BIO' (Aquí vive ACPYPE y OpenBabel sano)
 RUN /opt/miniconda/bin/conda create -n bio -y --override-channels -c conda-forge \
     python=3.10 \
+    pip \
     ambertools \
     acpype \
     openbabel \
+    pdbfixer \
     rdkit \
     tqdm \
     pandas \
@@ -95,14 +97,18 @@ RUN git clone https://github.com/ccsb-scripps/AutoDock-GPU.git /tmp/autodock-gpu
     chmod +x /usr/local/bin/autodock-gpu && \
     rm -rf /tmp/autodock-gpu
 
-# 7. GROMACS 2025.4 (Compilación Multi-GPU de tu original)
+# 7. GROMACS 2025.4 (Compilación con soporte para RTX 3050 y otras)
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.29.6-linux-x86_64.sh -O /tmp/cmake-install.sh && \
     bash /tmp/cmake-install.sh --skip-license --prefix=/usr/local && \
     wget -q https://ftp.gromacs.org/gromacs/gromacs-2025.4.tar.gz -O /tmp/gromacs.tar.gz && \
     tar xzf /tmp/gromacs.tar.gz -C /tmp && cd /tmp/gromacs-2025.4 && mkdir build && cd build && \
-    cmake .. -DGMX_BUILD_OWN_FFTW=ON -DGMX_GPU=CUDA -DGMX_MPI=ON -DGMX_SIMD=AVX2_256 \
-    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs -DGMX_CUDA_TARGET_SM="89;90;120" && \
-    make -j$(nproc) && make install && rm -rf /tmp/gromacs* 
+    cmake .. -DGMX_BUILD_OWN_FFTW=ON \
+    -DGMX_GPU=CUDA \
+    -DGMX_MPI=ON \
+    -DGMX_SIMD=AVX2_256 \
+    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
+    -DGMX_CUDA_TARGET_SM="75;80;86;89;90" && \
+    make -j$(nproc) && make install && rm -rf /tmp/gromacs*
 
 # 8. CONFIGURACIÓN FINAL
 WORKDIR /app/chemlink
