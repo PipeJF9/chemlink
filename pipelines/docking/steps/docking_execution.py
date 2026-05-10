@@ -38,8 +38,8 @@ class DockingExecution:
 	structured output layout.
 	"""
 
-	DEFAULT_AUTODOCK_GPU_EXECUTABLE = "/usr/local/bin/autodock-gpu"
-	DEFAULT_AUTOGRID_EXECUTABLE = "/usr/local/bin/autogrid4"
+	DEFAULT_AUTODOCK_GPU_EXECUTABLE = os.environ.get("AUTODOCK_GPU_BIN", "/usr/local/bin/autodock-gpu")
+	DEFAULT_AUTOGRID_EXECUTABLE = os.environ.get("AUTOGRID4_BIN", "/usr/local/bin/autogrid4")
 	DEFAULT_AUTODOCK_GPU_FALLBACKS = (
 		"/usr/local/bin/autodock-gpu",
 		"/usr/local/bin/adgpu-v1.6_linux_x64_cuda12_128wi",
@@ -154,34 +154,8 @@ class DockingExecution:
 	def _run_single(self, job: DockingJob) -> Dict[str, Any]:
 		"""Run one docking job."""
 		layout = self._create_output_layout(job.protein_name)
-		output_prefix = f"{job.protein_name}_{job.ligand_name}"
-		dlg_file = f"{output_prefix}.dlg"
-		xml_file = f"{output_prefix}.xml"
-
-		for path in (dlg_file, xml_file):
-			if os.path.exists(path):
-				os.remove(path)
-
-		cmd = [
-			self.autodock_gpu.executable,
-			"-ffile",
-			job.protein_map,
-			"-lfile",
-			job.ligand_file,
-			"-nrun",
-			str(self.run_count),
-			"-lsmet",
-			self.lsmet,
-			"-resnam",
-			output_prefix,
-			"-nev",
-			str(self.nev),
-		]
-
-		env = None
-		if job.gpu_id is not None:
-			env = os.environ.copy()
-			env["CUDA_VISIBLE_DEVICES"] = str(job.gpu_id)
+		output_name = f"{job.protein_name}_{job.ligand_name}"
+		output_prefix = os.path.join(self.temp_dir, output_name)
 
 		result = self.autodock_gpu.dock(
 			protein_map=job.protein_map,
@@ -294,9 +268,16 @@ class DockingExecution:
 			def _record_failure(job: DockingJob, exc: Exception) -> None:
 				nonlocal failed
 				failed += 1
-				status_text = f"FAILED {job.protein_name} vs {job.ligand_name}: {exc}"
+				# Log full error message with traceback to file
+				import traceback
+				full_error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+				self._log("ERROR", f"FAILED {job.protein_name} vs {job.ligand_name}:\n{full_error}", echo=False)
+				# Truncate for progress bar display
+				exc_str = str(exc)
+				if len(exc_str) > 100:
+					exc_str = exc_str[:97] + "..."
+				status_text = f"FAILED {job.protein_name} vs {job.ligand_name}: {exc_str}"
 				progress.set_postfix_str(status_text)
-				self._log("ERROR", status_text, echo=False)
 
 			if n_workers == 1:
 				for job in jobs:

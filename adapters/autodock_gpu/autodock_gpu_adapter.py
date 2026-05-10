@@ -24,8 +24,10 @@ class DockingResult:
 class AutoDockGPUAdapter:
 	"""Wrapper around AutoDock-GPU binary invocation."""
 
-	DEFAULT_EXECUTABLE = "/usr/local/bin/autodock-gpu"
+	DEFAULT_EXECUTABLE = os.environ.get("AUTODOCK_GPU_BIN", "/usr/local/bin/autodock-gpu")
 	DEFAULT_FALLBACKS = (
+		os.environ.get("AUTODOCK_GPU_BIN", "/usr/local/bin/autodock-gpu"),
+		"/nfs/chemlink/software/autodock-gpu/bin/autodock-gpu",
 		"/usr/local/bin/autodock-gpu",
 		"/usr/local/bin/adgpu-v1.6_linux_x64_cuda12_128wi",
 	)
@@ -92,8 +94,13 @@ class AutoDockGPUAdapter:
 		gpu_id: Optional[int] = None,
 	) -> DockingResult:
 		"""Execute one docking job and return structured metadata."""
-		dlg_file = f"{output_prefix}.dlg"
-		xml_file = f"{output_prefix}.xml"
+		output_prefix = os.path.abspath(output_prefix)
+		output_dir = os.path.dirname(output_prefix) or os.getcwd()
+		output_name = os.path.basename(output_prefix)
+		os.makedirs(output_dir, exist_ok=True)
+
+		dlg_file = os.path.join(output_dir, f"{output_name}.dlg")
+		xml_file = os.path.join(output_dir, f"{output_name}.xml")
 
 		for path in (dlg_file, xml_file):
 			if os.path.exists(path):
@@ -110,7 +117,7 @@ class AutoDockGPUAdapter:
 			"-lsmet",
 			lsmet,
 			"-resnam",
-			output_prefix,
+			output_name,
 			"-nev",
 			str(nev),
 		]
@@ -126,13 +133,19 @@ class AutoDockGPUAdapter:
 			text=True,
 			timeout=timeout_seconds,
 			env=env,
+			cwd=output_dir,
 		)
 
 		if result.returncode != 0:
 			raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "AutoDock-GPU failed")
 
 		if not os.path.isfile(dlg_file):
-			raise RuntimeError(f"DLG file was not generated: {dlg_file}")
+			stdout_tail = (result.stdout or "").strip()[-600:]
+			stderr_tail = (result.stderr or "").strip()[-600:]
+			raise RuntimeError(
+				f"DLG file was not generated: {dlg_file}. "
+				f"stdout_tail={stdout_tail!r} stderr_tail={stderr_tail!r}"
+			)
 
 		summary = self._parse_rmsd_table(dlg_file)
 		return DockingResult(

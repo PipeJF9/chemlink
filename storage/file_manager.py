@@ -63,9 +63,15 @@ def list_files_in_directory(directory: str, patterns: List[str]) -> List[str]:
     Returns:
         List of absolute file paths
     """
+    # Convert to absolute path to handle relative paths correctly
+    abs_directory = os.path.abspath(directory)
+    
+    if not os.path.isdir(abs_directory):
+        return []
+    
     files = []
     for pattern in patterns:
-        files.extend(glob.glob(os.path.join(directory, pattern)))
+        files.extend(glob.glob(os.path.join(abs_directory, pattern)))
     return sorted(files)
 
 

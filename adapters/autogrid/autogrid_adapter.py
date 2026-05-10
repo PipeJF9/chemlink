@@ -9,8 +9,10 @@ from typing import Optional
 class AutoGridAdapter:
 	"""Wrapper around AutoGrid4 binary invocation."""
 
-	DEFAULT_EXECUTABLE = "/usr/local/bin/autogrid4"
+	DEFAULT_EXECUTABLE = os.environ.get("AUTOGRID4_BIN", "/usr/local/bin/autogrid4")
 	DEFAULT_FALLBACKS = (
+		os.environ.get("AUTOGRID4_BIN", "/usr/local/bin/autogrid4"),
+		"/nfs/chemlink/software/autogrid4/bin/autogrid4",
 		"/usr/local/bin/autogrid4",
 		"/usr/local/bin/autogrid",
 	)

@@ -4,14 +4,10 @@ FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    # --- NUEVAS VARIABLES PARA MM-PBSA ---
-    OMPI_ALLOW_RUN_AS_ROOT=1 \
-    OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
     # Priorizamos el PATH de Conda para ACPYPE, pero mantenemos GROMACS y CUDA
     PATH=/opt/miniconda/envs/bio/bin:/opt/miniconda/bin:/usr/local/gromacs/bin:/usr/local/bin:/usr/local/cuda/bin:${PATH} \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
-    GMXRC=/usr/local/gromacs/bin/GMXRC \
-    PYTHONUNBUFFERED=1
+    GMXRC=/usr/local/gromacs/bin/GMXRC
 
 # 2. DEPENDENCIAS DEL SISTEMA (Unificado)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,11 +27,9 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
 # 4. ENTORNO 'BIO' (Aquí vive ACPYPE y OpenBabel sano)
 RUN /opt/miniconda/bin/conda create -n bio -y --override-channels -c conda-forge \
     python=3.10 \
-    pip \
     ambertools \
     acpype \
     openbabel \
-    pdbfixer \
     rdkit \
     tqdm \
     pandas \
@@ -107,51 +101,21 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.2
     wget -q https://ftp.gromacs.org/gromacs/gromacs-2025.4.tar.gz -O /tmp/gromacs.tar.gz && \
     tar xzf /tmp/gromacs.tar.gz -C /tmp && cd /tmp/gromacs-2025.4 && mkdir build && cd build && \
     cmake .. -DGMX_BUILD_OWN_FFTW=ON -DGMX_GPU=CUDA -DGMX_MPI=ON -DGMX_SIMD=AVX2_256 \
-    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs -DGMX_CUDA_TARGET_SM="86;89;90;120" && \
+    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs -DGMX_CUDA_TARGET_SM="89;90;120" && \
     make -j$(nproc) && make install && rm -rf /tmp/gromacs* 
 
 # 8. CONFIGURACIÓN FINAL
 WORKDIR /app/chemlink
 COPY . .
 
-# INSTALAMOS gmx_MMPBSA y dependencias en el entorno 'bio' (UNA SOLA VEZ)
-RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir \
-    biopython \
-    numpy \
-    pandas \
-    matplotlib \
-    gmx_MMPBSA
+# Dependencias Python del proyecto
+RUN /opt/miniconda/envs/bio/bin/python -m ensurepip && \
+    /opt/miniconda/envs/bio/bin/python -m pip install --no-cache-dir biopython numpy
 
-# Source GMXRC en bash
 RUN echo "source /usr/local/gromacs/bin/GMXRC" >> /etc/bash.bashrc
 
-# Instalar el paquete del proyecto en el entorno `bio` para exponer el CLI
-# y los módulos (incluye módulos de dinámica si están en el repo).
-RUN /opt/miniconda/envs/bio/bin/pip install --no-cache-dir -e . || true
+RUN printf '#!/usr/bin/env bash\nexport PYTHONPATH=/app:${PYTHONPATH:-}\nset +u; [ -f /usr/local/gromacs/bin/GMXRC ] && source /usr/local/gromacs/bin/GMXRC; set -u\nexec /opt/miniconda/envs/bio/bin/python -m chemlink.cli.main "$@"\n' \
+    > /usr/local/bin/chemlink \
+    && chmod +x /usr/local/bin/chemlink
 
-# Make `chemlink` available from ~/.local/bin inside the container
-RUN mkdir -p /root/.local/bin \
-     && (if [ -x /opt/miniconda/envs/bio/bin/chemlink ]; then \
-             ln -sf /opt/miniconda/envs/bio/bin/chemlink /root/.local/bin/chemlink; \
-         else \
-             ln -sf /app/chemlink/chemlink /root/.local/bin/chemlink; \
-         fi) \
-     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> /root/.bashrc
-
-ENV PATH="/root/.local/bin:${PATH}"
-
-# A small wrapper so `chemlink` can be invoked as a command without activating conda
-RUN printf '%s\n' "#!/bin/bash" \
-    "export PATH=/opt/miniconda/envs/bio/bin:\$PATH" \
-    "[ -f /usr/local/gromacs/bin/GMXRC ] && source /usr/local/gromacs/bin/GMXRC || true" \
-    "exec /opt/miniconda/envs/bio/bin/chemlink \"\$@\"" \
-    > /usr/local/bin/chemlink.wrap \
-    && chmod +x /usr/local/bin/chemlink.wrap \
-    && ln -sf /usr/local/bin/chemlink.wrap /usr/local/bin/chemlink
-
-# Al final del Dockerfile, antes de CMD/ENTRYPOINT
-RUN chmod 777 /app/chemlink/data/input/dynamics -R
-# O correr como root por defecto
-USER root
-# Default to an interactive shell so the CLI is available via bashrc
 CMD ["/bin/bash"]
