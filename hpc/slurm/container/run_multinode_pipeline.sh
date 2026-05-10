@@ -147,7 +147,7 @@ jid_receptor=$(INPUT_DIR="${INPUT_RECEPTORS_DIR}" \
   --array="${PREP_ARRAY_RANGE}" \
   --cpus-per-task="${RECEPTOR_CPUS_PER_TASK}" \
   --mem="${RECEPTOR_MEM}" \
-  hpc/slurm/receptor_preparation_array.slurm)
+  hpc/slurm/container/receptor_preparation_array.slurm)
 
 jid_ligand=$(INPUT_DIR="${INPUT_LIGANDS_DIR}" \
   REPO_DIR="${REPO_DIR}" \
@@ -162,7 +162,7 @@ jid_ligand=$(INPUT_DIR="${INPUT_LIGANDS_DIR}" \
   --array="${PREP_ARRAY_RANGE}" \
   --cpus-per-task="${LIGAND_CPUS_PER_TASK}" \
   --mem="${LIGAND_MEM}" \
-  hpc/slurm/ligand_preparation_array.slurm)
+  hpc/slurm/container/ligand_preparation_array.slurm)
 
 jid_active=$(REPO_DIR="${REPO_DIR}" \
   OUTPUT_DIR="${OUTPUT_DIR}" \
@@ -180,7 +180,7 @@ jid_active=$(REPO_DIR="${REPO_DIR}" \
   --mem="${ACTIVE_SITE_MEM}" \
   --output="${LOG_DIR}/active_site_%j.out" \
   --error="${LOG_DIR}/active_site_%j.err" \
-  hpc/slurm/active_site.slurm)
+  hpc/slurm/container/active_site.slurm)
 
 jid_batch=$(RUN_DIR="${RUN_DIR}" \
   PREPARED_LIGANDS_DIR="${OUTPUT_DIR}/prepared_ligands_pdbqt" \
@@ -192,7 +192,7 @@ jid_batch=$(RUN_DIR="${RUN_DIR}" \
   --mem="${BATCH_MEM}" \
   --output="${LOG_DIR}/batch_ligands_%j.out" \
   --error="${LOG_DIR}/batch_ligands_%j.err" \
-  hpc/slurm/prepare_ligand_batches.slurm)
+  hpc/slurm/container/prepare_ligand_batches.slurm)
 
 jid_docking=$(REPO_DIR="${REPO_DIR}" \
   RUN_DIR="${RUN_DIR}" \
@@ -213,7 +213,7 @@ jid_docking=$(REPO_DIR="${REPO_DIR}" \
   --mem="${DOCKING_MEM}" \
   --output="${LOG_DIR}/docking_%A_%a.out" \
   --error="${LOG_DIR}/docking_%A_%a.err" \
-  hpc/slurm/docking_array.slurm)
+  hpc/slurm/container/docking_array.slurm)
 
 jid_merge=$(RUN_DIR="${RUN_DIR}" \
   sbatch --parsable \
@@ -223,7 +223,7 @@ jid_merge=$(RUN_DIR="${RUN_DIR}" \
   --mem="${MERGE_MEM}" \
   --output="${LOG_DIR}/merge_%j.out" \
   --error="${LOG_DIR}/merge_%j.err" \
-  hpc/slurm/merge_docking_results.slurm)
+  hpc/slurm/container/merge_docking_results.slurm)
 
 jid_analysis=$(REPO_DIR="${REPO_DIR}" \
   ANALYSIS_OUTPUT_DIR="${RUN_DIR}/merged_output" \
@@ -238,7 +238,7 @@ jid_analysis=$(REPO_DIR="${REPO_DIR}" \
   --mem="${ANALYSIS_MEM}" \
   --output="${LOG_DIR}/analysis_%j.out" \
   --error="${LOG_DIR}/analysis_%j.err" \
-  hpc/slurm/analysis.slurm)
+  hpc/slurm/container/analysis.slurm)
 
 echo
 echo "Submitted jobs:"
