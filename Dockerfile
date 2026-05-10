@@ -98,17 +98,21 @@ RUN git clone https://github.com/ccsb-scripps/AutoDock-GPU.git /tmp/autodock-gpu
     rm -rf /tmp/autodock-gpu
 
 # 7. GROMACS 2025.4 (Compilación con soporte para RTX 3050 y otras)
-RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.29.6-linux-x86_64.sh -O /tmp/cmake-install.sh && \
-    bash /tmp/cmake-install.sh --skip-license --prefix=/usr/local && \
-    wget -q https://ftp.gromacs.org/gromacs/gromacs-2025.4.tar.gz -O /tmp/gromacs.tar.gz && \
-    tar xzf /tmp/gromacs.tar.gz -C /tmp && cd /tmp/gromacs-2025.4 && mkdir build && cd build && \
-    cmake .. -DGMX_BUILD_OWN_FFTW=ON \
-    -DGMX_GPU=CUDA \
-    -DGMX_MPI=ON \
-    -DGMX_SIMD=AVX2_256 \
-    -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
-    -DGMX_CUDA_TARGET_SM="75;80;86;89;90" && \
-    make -j$(nproc) && make install && rm -rf /tmp/gromacs*
+RUN wget -q https://ftp.gromacs.org/gromacs/gromacs-2025.4.tar.gz -O /tmp/gromacs.tar.gz \
+     && cd /tmp && tar xzf gromacs.tar.gz \
+     && cd gromacs-2025.4 && mkdir build && cd build \
+     && cmake .. \
+        -DGMX_BUILD_OWN_FFTW=ON \
+        -DREGRESSIONTEST_DOWNLOAD=OFF \
+        -DGMX_GPU=CUDA \
+        -DGMX_MPI=ON \
+        -DGMX_SIMD=AVX2_256 \
+        -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DGMX_CUDA_TARGET_SM="75;80;86;89;90;100;120" \
+        -DGMX_CUDA_TARGET_COMPUTE="90" \
+     && make -j$(nproc) && make install \
+     && rm -rf /tmp/gromacs*
 
 # 8. CONFIGURACIÓN FINAL
 WORKDIR /app/chemlink
