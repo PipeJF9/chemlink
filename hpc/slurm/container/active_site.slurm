@@ -31,8 +31,9 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
   if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
     "${CONTAINER_RUNTIME}" exec \
       --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
+      --env "PYTHONPATH=/nfs/chemlink:${PYTHONPATH:-}" \
       "${CONTAINER_IMAGE}" \
-      "${PYTHON_BIN}" cli/main.py active-site \
+      "${PYTHON_BIN}" -m chemlink.cli.main docking active-site \
       "${RECEPTOR_DIR}" \
       "${LIGAND_DIR}" \
       "${OUTPUT_DIR}" \
@@ -44,8 +45,9 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
       --user "$(id -u):$(id -g)" \
       -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       -w "${REPO_DIR}" \
+      -e "PYTHONPATH=/nfs/chemlink:${PYTHONPATH:-}" \
       "${CONTAINER_IMAGE}" \
-      "${PYTHON_BIN}" cli/main.py active-site \
+      "${PYTHON_BIN}" -m chemlink.cli.main docking active-site \
       "${RECEPTOR_DIR}" \
       "${LIGAND_DIR}" \
       "${OUTPUT_DIR}" \
@@ -54,7 +56,8 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
       --workers "${ACTIVE_SITE_WORKERS}"
   fi
 else
-  "${PYTHON_BIN}" cli/main.py active-site \
+  export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
+  "${PYTHON_BIN}" -m chemlink.cli.main docking active-site \
     "${RECEPTOR_DIR}" \
     "${LIGAND_DIR}" \
     "${OUTPUT_DIR}" \

@@ -9,12 +9,11 @@ from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from tqdm import tqdm
-
 from ....adapters.autogrid.autogrid_adapter import AutoGridAdapter
 from ....adapters.autodock_gpu.autodock_gpu_adapter import AutoDockGPUAdapter
 from ....storage.file_manager import create_folder, list_files_in_directory, find_compound_name
 from ....utils.logger import setup_logger
+from ....utils.progress import job_bar, CTRL_C_HINT
 
 logger = setup_logger(__name__)
 
@@ -255,7 +254,8 @@ class DockingExecution:
 		failed = 0
 		results: List[Dict[str, Any]] = []
 
-		with tqdm(total=len(jobs), desc="Docking", unit="job", ncols=80) as progress:
+		print(CTRL_C_HINT, end="", flush=True)
+		with job_bar("  Docking", len(jobs)) as progress:
 			def _record_success(job: DockingJob, result: Dict[str, Any]) -> None:
 				nonlocal successful
 				self._move_outputs(result)

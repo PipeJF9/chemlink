@@ -34,9 +34,8 @@ echo "[$(date)] Local workers: ${N_WORKERS}"
 
 cd "${REPO_DIR}"
 export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
-export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
 
-"${PYTHON_BIN}" -m chemlink.cli.main receptor-preparation \
+"${PYTHON_BIN}" -m chemlink.cli.main docking receptor \
   "${INPUT_DIR}" \
   "${OUTPUT_DIR}" \
   --mgltools-path "${MGLTOOLS_PATH}" \

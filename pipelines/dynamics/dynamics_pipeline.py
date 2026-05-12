@@ -1,88 +1,107 @@
 import os
 
+from hpc.cluster.resource_detector import get_hardware_profile
+from utils.progress import pipeline_bar as make_pipeline_bar, CTRL_C_HINT
 from pipelines.dynamics.steps.ligand_topology import LigandTopologyStep
 from .utils import check_gmx_installation
-from tqdm import tqdm
-from .steps import ComplexBuilderStep,TopologyStep, SolvationStep, IonsStep, EnergyMinStep, EquilibrationStep, ProductionStep, PostProcessingStep, AnalysisStep
+from .steps import (
+    ComplexBuilderStep,
+    TopologyStep,
+    SolvationStep,
+    IonsStep,
+    EnergyMinStep,
+    EquilibrationStep,
+    ProductionStep,
+    PostProcessingStep,
+    AnalysisStep,
+)
+
 
 class DynamicsPipeline:
-    def __init__(self, config):
-        """
-        # Prioridad 1: Slurm | Prioridad 2: Config CLI | Prioridad 3: Hardware local
-        assigned_cpus = os.environ.get("SLURM_CPUS_ON_NODE")
-        total_threads = int(assigned_cpus) if assigned_cpus else self.config.get("threads", os.cpu_count())
-
-        config: Diccionario enviado por el CLI con:
-                - ns_time (float)
-                - pdb_input (str)
-                - work_dir (str)
-                - threads (int)
-        """
-        self.config = config
-        self.gmx_bin = check_gmx_installation()
+    def __init__(self, config: dict) -> None:
+        self.config   = config
+        self.gmx_bin  = check_gmx_installation()
         self.total_steps = 10
 
-    def execute(self):
-        print(f" CHEMLINK DYNAMICS ORCHESTRATOR: {self.config['sim_type_label'].upper()}")
-        print("="*50)
+        # Detect hardware and expose GPU indices to all steps via config.
+        # Steps read config["gpu_ids"] to decide whether to pass GPU flags
+        # to mdrun; an empty list means CPU-only execution.
+        hw = get_hardware_profile()
+        self.config.setdefault("gpu_ids", hw.gpu_indices)
+        if hw.has_gpu:
+            gpu_names = ", ".join(
+                f"GPU {g.index} {g.name} ({g.memory_total_gb} GB)"
+                for g in hw.gpus
+            )
+            print(f" Hardware  : {gpu_names}")
+        else:
+            print(" Hardware  : No NVIDIA GPU detected — running on CPU")
 
-        pipeline_bar = tqdm(total=self.total_steps, desc="Overall Progress", unit="step")
+    def execute(self) -> None:
+        label = self.config["sim_type_label"].upper()
+        print(f"\n CHEMLINK DYNAMICS ORCHESTRATOR: {label}")
+        print("=" * 50)
+
+        print(CTRL_C_HINT, end="", flush=True)
+        pipeline_bar = make_pipeline_bar(self.total_steps)
+        current_step = "initialisation"
         try:
-            #'''
-            # 0. COMPLEX BUILDING
+            # 0. COMPLEX BUILDING (sim types 3–6 only)
+            current_step = "complex building"
             if self.config["sim_type"] in ["3", "4", "5", "6"]:
-                comp = ComplexBuilderStep(self.config)
-                comp.run()
+                ComplexBuilderStep(self.config).run()
             pipeline_bar.update(1)
 
             # 1. TOPOLOGY
-            topo = TopologyStep(self.config, self.gmx_bin)
-            topo.run()
+            current_step = "topology"
+            TopologyStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
-            # 1.5 LIGAND TOPOLOGY
+            # 1.5 LIGAND TOPOLOGY (sim types 2 and 6 only)
+            current_step = "ligand topology"
             if self.config["sim_type"] in ["2", "6"]:
-                ligand_step = LigandTopologyStep(self.config, self.gmx_bin)
-                ligand_step.run()
+                LigandTopologyStep(self.config, self.gmx_bin).run()
                 self.config["current_gro"] = "complex.gro"
             else:
                 self.config["current_gro"] = "processed.gro"
             pipeline_bar.update(1)
+
             # 2. SOLVATION
-            solv = SolvationStep(self.config, self.gmx_bin)
-            solv.run()
+            current_step = "solvation"
+            SolvationStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
             # 3. IONS
-            ions = IonsStep(self.config, self.gmx_bin)
-            ions.run()
+            current_step = "ions"
+            IonsStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
-            # 4. ENERGY MINIMIZATION
-            em = EnergyMinStep(self.config, self.gmx_bin)
-            em.run()
+            # 4. ENERGY MINIMISATION
+            current_step = "energy minimisation"
+            EnergyMinStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
             # 5. EQUILIBRATION
-            equil = EquilibrationStep(self.config, self.gmx_bin)
-            equil.run()
+            current_step = "equilibration"
+            EquilibrationStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
             # 6. PRODUCTION
-            prod = ProductionStep(self.config, self.gmx_bin)
-            prod.run()
+            current_step = "production"
+            ProductionStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
             # 7. POST-PROCESSING
-            post_proc = PostProcessingStep(self.config, self.gmx_bin)
-            post_proc.run()
-            pipeline_bar.update(1)
-            #'''
-            # 8. ANALYSIS
-            analysis = AnalysisStep(self.config, self.gmx_bin)
-            analysis.run()
+            current_step = "post-processing"
+            PostProcessingStep(self.config, self.gmx_bin).run()
             pipeline_bar.update(1)
 
-        except Exception as e:
-            print(f"\n[X] CRITICAL ERROR : {e}")
-            raise e
+            # 8. ANALYSIS
+            current_step = "analysis"
+            AnalysisStep(self.config, self.gmx_bin).run()
+            pipeline_bar.update(1)
+
+        except Exception as exc:
+            pipeline_bar.close()
+            print(f"\n[✗] CRITICAL ERROR in {current_step}: {exc}")
+            raise

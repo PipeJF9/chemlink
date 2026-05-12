@@ -35,8 +35,9 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
   if [[ "${CONTAINER_RUNTIME}" == "apptainer" || "${CONTAINER_RUNTIME}" == "singularity" ]]; then
     "${CONTAINER_RUNTIME}" exec \
       --bind "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
+      --env "PYTHONPATH=/nfs/chemlink:${PYTHONPATH:-}" \
       "${CONTAINER_IMAGE}" \
-      "${PYTHON_BIN}" cli/main.py receptor-preparation \
+      "${PYTHON_BIN}" -m chemlink.cli.main docking receptor \
       "${INPUT_DIR}" \
       "${OUTPUT_DIR}" \
       --mgltools-path "${MGLTOOLS_PATH}" \
@@ -46,15 +47,17 @@ if [[ -n "${CONTAINER_IMAGE}" ]]; then
       --user "$(id -u):$(id -g)" \
       -v "${CONTAINER_MOUNT_ROOT}:${CONTAINER_MOUNT_ROOT}" \
       -w "${REPO_DIR}" \
+      -e "PYTHONPATH=/nfs/chemlink:${PYTHONPATH:-}" \
       "${CONTAINER_IMAGE}" \
-      "${PYTHON_BIN}" cli/main.py receptor-preparation \
+      "${PYTHON_BIN}" -m chemlink.cli.main docking receptor \
       "${INPUT_DIR}" \
       "${OUTPUT_DIR}" \
       --mgltools-path "${MGLTOOLS_PATH}" \
       --workers "${N_WORKERS}"
   fi
 else
-  "${PYTHON_BIN}" cli/main.py receptor-preparation \
+  export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
+  "${PYTHON_BIN}" -m chemlink.cli.main docking receptor \
     "${INPUT_DIR}" \
     "${OUTPUT_DIR}" \
     --mgltools-path "${MGLTOOLS_PATH}" \

@@ -31,7 +31,7 @@ LIGAND_DIR="${OUTPUT_DIR}/prepared_ligands_pdbqt"
 cd "${REPO_DIR}"
 export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
 
-"${PYTHON_BIN}" -m chemlink.cli.main active-site \
+"${PYTHON_BIN}" -m chemlink.cli.main docking active-site \
   "${RECEPTOR_DIR}" \
   "${LIGAND_DIR}" \
   "${OUTPUT_DIR}" \

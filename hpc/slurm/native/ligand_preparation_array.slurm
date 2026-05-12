@@ -34,7 +34,7 @@ echo "[$(date)] Local workers: ${N_WORKERS}"
 cd "${REPO_DIR}"
 export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
 
-"${PYTHON_BIN}" -m chemlink.cli.main ligand-preparation \
+"${PYTHON_BIN}" -m chemlink.cli.main docking ligand \
   "${INPUT_DIR}" \
   "${OUTPUT_DIR}" \
   --workers "${N_WORKERS}"
