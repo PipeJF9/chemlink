@@ -11,6 +11,7 @@ lazr.restfulclient==0.14.4
 lazr.uri==1.0.6
 more-itertools==8.10.0
 numpy==2.4.3
+rich>=13.0
 oauthlib==3.2.0
 pillow==12.1.1
 PyGObject==3.42.1

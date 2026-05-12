@@ -420,7 +420,7 @@ class ActiveSiteDetection:
 
 		receptors = self._collect_receptors()
 		if not receptors:
-			print(f"No receptor .pdbqt files found in {self.receptor_path}")
+			logger.warning("No receptor .pdbqt files found in %s", self.receptor_path)
 			return {"successful": 0, "failed": 0}
 
 		ligand_file = self._select_reference_ligand()
@@ -430,12 +430,12 @@ class ActiveSiteDetection:
 		if shard_cfg:
 			shard_index, shard_count = shard_cfg
 			receptors = self._select_shard_files(receptors, shard_index, shard_count)
-			print(
-				f"SLURM sharding enabled: shard {shard_index + 1}/{shard_count} "
-				f"processing {len(receptors)}/{total_files} receptor(s)"
+			logger.info(
+				"SLURM sharding enabled: shard %d/%d processing %d/%d receptor(s)",
+				shard_index + 1, shard_count, len(receptors), total_files,
 			)
 			if not receptors:
-				print("No receptors assigned to this shard.")
+				logger.info("No receptors assigned to this shard.")
 				return {"successful": 0, "failed": 0}
 
 		if n_workers is None:
@@ -451,14 +451,14 @@ class ActiveSiteDetection:
 		failed: List[Dict[str, Any]] = []
 		timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-		print(
-			f"\nDetecting active sites for {len(receptors)} receptor(s) "
-			f"using {n_workers} worker(s)...\n"
+		logger.info(
+			"Detecting active sites for %d receptor(s) using %d worker(s).",
+			len(receptors), n_workers,
 		)
 		if self.is_manual_mode:
-			print(
-				"Manual grid mode enabled: using provided center "
-				f"{self.manual_center} and npts {self.manual_npts}"
+			logger.info(
+				"Manual grid mode: center=%s npts=%s",
+				self.manual_center, self.manual_npts,
 			)
 
 		if n_workers == 1:
@@ -509,15 +509,16 @@ class ActiveSiteDetection:
 						)
 						logger.error(f"Failed {receptor_name}: {e}")
 
-		print(f"\n✓ Successfully processed: {len(successful_rows)}/{len(receptors)} receptors")
+		logger.info(
+			"Successfully processed: %d/%d receptors", len(successful_rows), len(receptors)
+		)
 
 		if successful_rows:
 			dimensions_report = self._write_dimensions_report(successful_rows, timestamp)
-			print(f"Dimensions report: {dimensions_report}")
+			logger.info("Dimensions report: %s", dimensions_report)
 
 		if failed:
 			error_report = self._write_error_report(failed, timestamp)
-			print(f"Failed: {len(failed)} - See: {error_report}")
+			logger.warning("Failed: %d receptor(s) — see %s", len(failed), error_report)
 
-		print()
 		return {"successful": len(successful_rows), "failed": len(failed)}
