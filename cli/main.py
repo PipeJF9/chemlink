@@ -847,6 +847,200 @@ def _run_hpc_docking(args: Namespace) -> int:
     return result.returncode
 
 
+# ── HPC Dynamics command handler ──────────────────────────────────────────────
+
+def _count_pdb_atoms(pdb_path: str) -> int:
+    try:
+        count = 0
+        with open(pdb_path) as fh:
+            for line in fh:
+                if line.startswith(("ATOM  ", "HETATM")):
+                    count += 1
+        return count
+    except OSError:
+        return 0
+
+
+def _run_hpc_dynamics(args: Namespace) -> int:
+    import glob as _glob
+    import time as _time
+
+    try:
+        from ..pipelines.dynamics.utils import setup_work_directory
+    except ImportError:
+        try:
+            from chemlink.pipelines.dynamics.utils import setup_work_directory  # type: ignore
+        except ImportError:
+            from pipelines.dynamics.utils import setup_work_directory  # type: ignore
+
+    try:
+        from ..hpc.cluster.network_detector import get_multinode_recommendation
+    except ImportError:
+        try:
+            from hpc.cluster.network_detector import get_multinode_recommendation  # type: ignore
+        except ImportError:
+            from chemlink.hpc.cluster.network_detector import get_multinode_recommendation  # type: ignore
+
+    dyn_type = args.dyn_type
+    sim_id, label, min_files = _DYN_SPEC[dyn_type]
+
+    # --- Build per-simulation input file lists ---
+    sim_input_sets: list[list[str]] = []
+
+    if dyn_type == "pligand" and args.protein_file and args.ligand_files:
+        for lig in args.ligand_files:
+            sim_input_sets.append([args.protein_file, lig])
+    else:
+        all_files = list(args.input_files or [])
+        if len(all_files) < min_files:
+            needed = ", ".join(_DYN_FILE_LABELS[dyn_type])
+            err_console.print(
+                f"\n[bold red]Error:[/] '{dyn_type}' requires {min_files} file(s): {needed}\n"
+                f"  Got {len(all_files)}. Use [cyan]-i FILE[/] or [cyan]--protein/--ligands[/].\n"
+            )
+            return 1
+        sim_input_sets.append(all_files)
+
+    n_sims = len(sim_input_sets)
+    n_nodes = len(args.nodes.split(",")) if args.nodes else 1
+
+    # --- Estimate atom count from first simulation's first PDB ---
+    raw_atoms = _count_pdb_atoms(sim_input_sets[0][0]) if sim_input_sets else 0
+    estimated_atoms = max(raw_atoms * 10, 1)
+
+    rec = get_multinode_recommendation(estimated_atoms, n_nodes)
+    if rec["use_multinode"]:
+        print_info(f"Network: {rec['speed_gbps']:.0f} GbE — multi-node recommended")
+    else:
+        print_warn(f"Network: {rec['reason']}")
+
+    # --- Build per-simulation config dicts and write individual JSON files ---
+    timestamp = f"{datetime.now():%Y%m%dT%H%M%S}"
+    configs: list[dict] = []
+
+    for idx, files in enumerate(sim_input_sets):
+        work_dir = setup_work_directory("data/output/dynamics", dyn_type)
+        config: dict = {
+            "sim_type":       sim_id,
+            "sim_type_label": label,
+            "ns_time":        args.time,
+            "threads":        args.cpus,
+            "work_dir":       work_dir,
+        }
+
+        if dyn_type == "oprotein":
+            config["pdb_input"] = files[0]
+        elif dyn_type == "pligand":
+            config.update(pdb_input=files[0], ligand_pdb=files[1],
+                          ligand_charge=args.charge)
+        elif dyn_type in ("ppeptide", "pacid", "pprotein"):
+            config.update(pdb_protein=files[0], pdb_partner=files[1],
+                          pdb_input=os.path.join(work_dir, "complex.pdb"))
+        elif dyn_type == "ppligand":
+            config.update(pdb_protein=files[0], pdb_partner=files[1],
+                          pdb_input=os.path.join(work_dir, "complex.pdb"),
+                          ligand_pdb=files[2], ligand_charge=args.charge)
+
+        cfg_path = os.path.join(work_dir, "hpc_config.json")
+        config["_config_path"] = cfg_path
+        with open(cfg_path, "w") as fh:
+            json.dump(config, fh, indent=2)
+
+        configs.append(config)
+
+    master_json = f"/tmp/chemlink_dyn_configs_{timestamp}.json"
+    with open(master_json, "w") as fh:
+        json.dump(configs, fh, indent=2)
+
+    # --- Summary table ---
+    t = Table(
+        title="[bold cyan]HPC Dynamics Configuration[/]",
+        box=rich_box.ROUNDED,
+        border_style="cyan",
+        show_header=False,
+        min_width=52,
+    )
+    t.add_column(style="dim",  no_wrap=True)
+    t.add_column(style="bold")
+    t.add_row("Simulation type",   label)
+    t.add_row("Duration",          f"{args.time} ns")
+    t.add_row("Simulations",       str(n_sims))
+    t.add_row("CPUs per job",      str(args.cpus))
+    t.add_row("Memory per job",    args.mem)
+    t.add_row("Wall time",         args.time_limit)
+    t.add_row("Interconnect",      f"{rec['speed_gbps']:.0f} GbE")
+    if args.partition:
+        t.add_row("SLURM partition", args.partition)
+    if args.nodes:
+        t.add_row("Nodes",           args.nodes)
+    t.add_row("Config list",       master_json)
+    console.print()
+    console.print(t)
+    console.print()
+
+    if args.dry_run:
+        console.print("[bold yellow]Dry-run mode — jobs that would be submitted:[/]")
+        for i, cfg in enumerate(configs):
+            console.print(f"  Sim {i + 1}: [cyan]{cfg['work_dir']}[/]")
+        console.print()
+        return 0
+
+    script_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "hpc", "slurm", "native", "run_dynamics_pipeline.sh",
+    )
+
+    if not os.path.isfile(script_path):
+        err_console.print(
+            f"\n[bold red]Error:[/] Pipeline script not found: [cyan]{script_path}[/]\n"
+        )
+        return 1
+
+    env_overrides: dict = {
+        "DYN_TYPE":         dyn_type,
+        "DYN_NS_TIME":      str(args.time),
+        "DYN_CHARGE":       str(args.charge),
+        "DYN_CONFIGS_JSON": master_json,
+        "DYN_TIME_LIMIT":   args.time_limit,
+        "DYN_MEM":          args.mem,
+        "DYN_CPUS":         str(args.cpus),
+    }
+    if args.partition:
+        env_overrides["SLURM_PARTITION"] = args.partition
+    if args.nodes:
+        env_overrides["SLURM_NODELIST"] = args.nodes
+
+    env = {**os.environ, **env_overrides}
+    result = subprocess.run(["bash", script_path], env=env)
+
+    # --- Results table ---
+    rt = Table(
+        title="[bold cyan]Submitted Jobs[/]",
+        box=rich_box.ROUNDED,
+        border_style="cyan",
+        header_style="bold cyan",
+        min_width=60,
+    )
+    rt.add_column("#",         style="dim",  justify="right")
+    rt.add_column("Type",      style="bold")
+    rt.add_column("Work dir",  style="dim")
+    if args.nodes:
+        rt.add_column("Node", style="cyan")
+
+    node_list = args.nodes.split(",") if args.nodes else []
+    for i, cfg in enumerate(configs):
+        row = [str(i + 1), label, cfg["work_dir"]]
+        if args.nodes:
+            row.append(node_list[i % len(node_list)])
+        rt.add_row(*row)
+
+    console.print()
+    console.print(rt)
+    console.print()
+
+    return result.returncode
+
+
 # ── Shell completion ───────────────────────────────────────────────────────────
 
 _BASH_SCRIPT = """\
@@ -869,9 +1063,12 @@ _chemlink() {
         doctor)
             COMPREPLY=( $(compgen -W "--json" -- "$cur") );;
         hpc)
-            [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "docking" -- "$cur") )
+            [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "docking dynamics" -- "$cur") )
             if [[ $depth -ge 3 && "$sub" == "docking" ]]; then
                 COMPREPLY=( $(compgen -W "--ligand-dir --receptor-dir --nodes --partition --gres --batch-size --prep-tasks --receptor-workers --ligand-workers --active-site-workers --docking-workers --max-gpu-concurrency --mode --container-image --dry-run" -- "$cur") )
+            fi
+            if [[ $depth -ge 3 && "$sub" == "dynamics" ]]; then
+                COMPREPLY=( $(compgen -W "oprotein pligand ppeptide pacid pprotein ppligand --protein --ligands --time --charge --nodes --partition --time-limit --mem --cpus --dry-run" -- "$cur") )
             fi;;
         *)
             COMPREPLY=( $(compgen -W "docking dynamic doctor completion hpc --help --version" -- "$cur") );;
@@ -892,7 +1089,7 @@ zstyle ':completion:*:chemlink:*'              group-name ''
 zstyle ':completion:*:chemlink:*'              list-colors '=:=90'
 
 _chemlink() {
-    local -a top dock dyn shells hpccmds hpcdock
+    local -a top dock dyn shells hpccmds hpcdock hpcdyn
 
     top=(
         'docking:Molecular docking workflows'
@@ -929,6 +1126,7 @@ _chemlink() {
     )
     hpccmds=(
         'docking:Submit full docking pipeline to SLURM'
+        'dynamics:Submit molecular dynamics simulations to SLURM'
     )
 
     case $words[2] in
@@ -963,6 +1161,20 @@ _chemlink() {
                     '--max-gpu-concurrency[Max concurrent docking tasks]:N:' \\
                     '--mode[Script set to use]:mode:(native container)' \\
                     '--container-image[Container image path]:image:_files' \\
+                    '--dry-run[Print config without submitting]'
+            elif (( CURRENT >= 4 )) && [[ $words[3] == dynamics ]]; then
+                _arguments \\
+                    ':simulation type:(oprotein pligand ppeptide pacid pprotein ppligand)' \\
+                    '-i[File inside data/input/dynamics]:file:_files' \\
+                    '--protein[Protein PDB file]:file:_files' \\
+                    '--ligands[Ligand PDB files]:file:_files' \\
+                    '--time[Simulation time in ns]:NS:' \\
+                    '--charge[Ligand net charge]:Q:' \\
+                    '--nodes[SLURM nodelist]:nodelist:' \\
+                    '--partition[SLURM partition]:partition:' \\
+                    '--time-limit[Wall time per job HH:MM:SS]:HH\\:MM\\:SS:' \\
+                    '--mem[Memory per job]:MEM:' \\
+                    '--cpus[CPUs per job]:N:' \\
                     '--dry-run[Print config without submitting]'
             fi
             ;;
@@ -1348,6 +1560,36 @@ def build_parser() -> _Parser:
     hpc_dock.add_argument("--dry-run", action="store_true",
                           help="Print configuration and command without submitting")
     hpc_dock.set_defaults(handler=_run_hpc_docking)
+
+    hpc_dyn = hpc_sub.add_parser("dynamics", formatter_class=_Fmt,
+                                 help="Submit molecular dynamics simulations to SLURM")
+    hpc_dyn.add_argument("dyn_type", choices=list(_DYN_SPEC.keys()), metavar="TYPE",
+                         help="Simulation type: " + " | ".join(_DYN_SPEC.keys()))
+    hpc_dyn.add_argument("-i", "--input-files", dest="input_files", action="append",
+                         metavar="FILE",
+                         help="Input file (repeatable, use for single-simulation mode)")
+    hpc_dyn.add_argument("--protein", dest="protein_file", metavar="PDB",
+                         help="Protein PDB file (use with --ligands for multi-simulation)")
+    hpc_dyn.add_argument("--ligands", dest="ligand_files", nargs="+", metavar="PDB",
+                         help="One or more ligand PDB files — one job per ligand")
+    hpc_dyn.add_argument("--time", "-t", type=float, default=100.0, metavar="NS",
+                         help="Simulation time in nanoseconds  [100.0]")
+    hpc_dyn.add_argument("--charge", type=int, default=0, metavar="Q",
+                         help="Ligand net charge  [0]")
+    hpc_dyn.add_argument("--nodes", metavar="NODELIST",
+                         help="SLURM nodelist (comma-separated) — distributes jobs across nodes")
+    hpc_dyn.add_argument("--partition", metavar="PARTITION",
+                         help="SLURM partition to submit to")
+    hpc_dyn.add_argument("--time-limit", dest="time_limit", default="72:00:00",
+                         metavar="HH:MM:SS",
+                         help="Wall time per job  [72:00:00]")
+    hpc_dyn.add_argument("--mem", default="32G", metavar="MEM",
+                         help="Memory per job  [32G]")
+    hpc_dyn.add_argument("--cpus", type=int, default=8, metavar="N",
+                         help="CPUs per job  [8]")
+    hpc_dyn.add_argument("--dry-run", action="store_true",
+                         help="Print configuration without submitting jobs")
+    hpc_dyn.set_defaults(handler=_run_hpc_dynamics)
 
     return parser
 
