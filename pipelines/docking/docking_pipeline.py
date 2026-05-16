@@ -71,11 +71,27 @@ class DockingPipeline:
 		If the receptor_input_path contains .pdbqt files, it's treated as already-prepared
 		receptors (useful when starting from a later step in the pipeline).
 		Otherwise, return the standard output path for prepared receptors.
+		When inside a run_<timestamp> subdirectory, also check the parent directory.
 		"""
+		import os
 		# Check if receptor_input_path already contains prepared receptors
 		if list_files_in_directory(self.receptor_input_path, ["*.pdbqt"]):
 			return self.receptor_input_path
-		return f"{self.output_path}/prepared_receptors_pdbqt"
+		
+		# Try the standard location
+		standard_path = f"{self.output_path}/prepared_receptors_pdbqt"
+		if list_files_in_directory(standard_path, ["*.pdbqt"]):
+			return standard_path
+		
+		# If inside a run_<timestamp> subdirectory, check parent
+		parent_path = os.path.dirname(self.output_path)
+		if parent_path != self.output_path:  # Avoid infinite recursion
+			parent_candidate = f"{parent_path}/prepared_receptors_pdbqt"
+			if os.path.isdir(parent_candidate) and list_files_in_directory(parent_candidate, ["*.pdbqt"]):
+				return parent_candidate
+		
+		# Return the standard path (will error later if not found)
+		return standard_path
 
 	@property
 	def prepared_ligand_path(self) -> str:
@@ -84,11 +100,27 @@ class DockingPipeline:
 		If the ligand_input_path contains .pdbqt files, it's treated as already-prepared
 		ligands (useful when starting from a later step in the pipeline).
 		Otherwise, return the standard output path for prepared ligands.
+		When inside a run_<timestamp> subdirectory, also check the parent directory.
 		"""
+		import os
 		# Check if ligand_input_path already contains prepared ligands
 		if list_files_in_directory(self.ligand_input_path, ["*.pdbqt"]):
 			return self.ligand_input_path
-		return f"{self.output_path}/prepared_ligands_pdbqt"
+		
+		# Try the standard location
+		standard_path = f"{self.output_path}/prepared_ligands_pdbqt"
+		if list_files_in_directory(standard_path, ["*.pdbqt"]):
+			return standard_path
+		
+		# If inside a run_<timestamp> subdirectory, check parent
+		parent_path = os.path.dirname(self.output_path)
+		if parent_path != self.output_path:  # Avoid infinite recursion
+			parent_candidate = f"{parent_path}/prepared_ligands_pdbqt"
+			if os.path.isdir(parent_candidate) and list_files_in_directory(parent_candidate, ["*.pdbqt"]):
+				return parent_candidate
+		
+		# Return the standard path (will error later if not found)
+		return standard_path
 
 	def _build_receptor_preparation(self) -> ReceptorPreparation:
 		return ReceptorPreparation(

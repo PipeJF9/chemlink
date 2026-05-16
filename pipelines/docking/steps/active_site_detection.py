@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import cpu_count
 from typing import Optional, Dict, List, Tuple, Any
 
-from tqdm import tqdm
+from ....utils.progress import step_bar_iter
 
 
 from ....storage.file_manager import (
@@ -462,7 +462,9 @@ class ActiveSiteDetection:
 			)
 
 		if n_workers == 1:
-			for receptor_file in tqdm(receptors, desc="Progress", unit="receptor", ncols=80):
+			for receptor_file in step_bar_iter(
+				receptors, "Active Site Detection", unit="receptor", colour="yellow3"
+			):
 				receptor_name = find_compound_name(receptor_file)
 				try:
 					result = self._process_single(receptor_file, ligand_file)
@@ -485,12 +487,9 @@ class ActiveSiteDetection:
 					for receptor_file in receptors
 				}
 
-				for future in tqdm(
-					as_completed(future_map),
-					total=len(future_map),
-					desc="Progress",
-					unit="receptor",
-					ncols=80,
+				for future in step_bar_iter(
+					as_completed(future_map), "Active Site Detection",
+					total=len(future_map), unit="receptor", colour="yellow3",
 				):
 					receptor_file = future_map[future]
 					receptor_name = find_compound_name(receptor_file)

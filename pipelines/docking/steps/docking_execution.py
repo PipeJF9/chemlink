@@ -13,7 +13,7 @@ from ....adapters.autogrid.autogrid_adapter import AutoGridAdapter
 from ....adapters.autodock_gpu.autodock_gpu_adapter import AutoDockGPUAdapter
 from ....storage.file_manager import create_folder, list_files_in_directory, find_compound_name
 from ....utils.logger import setup_logger
-from ....utils.progress import job_bar, CTRL_C_HINT
+from ....utils.progress import job_bar, CTRL_C_HINT, console as _progress_console
 
 logger = setup_logger(__name__)
 
@@ -254,7 +254,7 @@ class DockingExecution:
 		failed = 0
 		results: List[Dict[str, Any]] = []
 
-		print(CTRL_C_HINT, end="", flush=True)
+		_progress_console.print(CTRL_C_HINT, end="")
 		with job_bar("  Docking", len(jobs)) as progress:
 			def _record_success(job: DockingJob, result: Dict[str, Any]) -> None:
 				nonlocal successful

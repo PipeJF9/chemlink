@@ -7,7 +7,7 @@ from datetime import datetime
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from typing import Optional, List, Dict, Tuple
-from tqdm import tqdm
+from ....utils.progress import step_bar_iter
 
 
 from ....storage.file_manager import (
@@ -275,20 +275,17 @@ class LigandPreparation:
         
         # Process ligands
         if n_workers == 1:
-            # Sequential processing
             results = []
-            for f in tqdm(files, desc="Progress", unit="ligand", ncols=80):
+            for f in step_bar_iter(
+                files, "Ligand Preparation", unit="ligand", colour="magenta"
+            ):
                 results.append(process_ligand(f, self.output_path))
         else:
-            # Parallel processing
             worker_func = partial(process_ligand, output_path=self.output_path)
             with Pool(processes=n_workers) as pool:
-                results = list(tqdm(
-                    pool.imap(worker_func, files),
-                    total=len(files),
-                    desc="Progress",
-                    unit="ligand",
-                    ncols=80
+                results = list(step_bar_iter(
+                    pool.imap(worker_func, files), "Ligand Preparation",
+                    total=len(files), unit="ligand", colour="magenta",
                 ))
         
         # Collect results

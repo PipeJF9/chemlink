@@ -885,13 +885,26 @@ def _run_hpc_dynamics(args: Namespace) -> int:
     sim_id, label, min_files = _DYN_SPEC[dyn_type]
 
     # --- Build per-simulation input file lists ---
+    # Resolve each path: use as-is if it exists, otherwise look in data/input/dynamics/
+    # Always convert to absolute paths so SLURM workers find them from any cwd.
+    def _resolve_hpc_file(f: str) -> str:
+        if os.path.isabs(f) or os.path.exists(f):
+            return os.path.abspath(f)
+        candidate = os.path.join("data/input/dynamics", f)
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+        return os.path.abspath(f)  # keep original so GROMACS reports correct missing path
+
     sim_input_sets: list[list[str]] = []
 
     if dyn_type == "pligand" and args.protein_file and args.ligand_files:
         for lig in args.ligand_files:
-            sim_input_sets.append([args.protein_file, lig])
+            sim_input_sets.append([
+                _resolve_hpc_file(args.protein_file),
+                _resolve_hpc_file(lig),
+            ])
     else:
-        all_files = list(args.input_files or [])
+        all_files = [_resolve_hpc_file(f) for f in (args.input_files or [])]
         if len(all_files) < min_files:
             needed = ", ".join(_DYN_FILE_LABELS[dyn_type])
             err_console.print(
@@ -901,8 +914,23 @@ def _run_hpc_dynamics(args: Namespace) -> int:
             return 1
         sim_input_sets.append(all_files)
 
-    n_sims = len(sim_input_sets)
     n_nodes = len(args.nodes.split(",")) if args.nodes else 1
+
+    # --mpi: single job spanning all nodes — warn and fall back if only 1 node
+    use_mpi = getattr(args, "mpi", False) and n_nodes > 1
+    if getattr(args, "mpi", False) and not use_mpi:
+        print_warn("--mpi requires --nodes with more than one node; falling back to normal mode.")
+
+    if use_mpi:
+        # Force a single simulation config — MPI handles parallelism internally
+        n_sims = 1
+        sim_input_sets = sim_input_sets[:1]
+    else:
+        # --replicate: submit the same single simulation to every node in --nodes
+        if getattr(args, "replicate", False) and n_nodes > 1 and len(sim_input_sets) == 1:
+            sim_input_sets = sim_input_sets * n_nodes
+
+        n_sims = len(sim_input_sets)
 
     # --- Estimate atom count from first simulation's first PDB ---
     raw_atoms = _count_pdb_atoms(sim_input_sets[0][0]) if sim_input_sets else 0
@@ -917,9 +945,21 @@ def _run_hpc_dynamics(args: Namespace) -> int:
     # --- Build per-simulation config dicts and write individual JSON files ---
     timestamp = f"{datetime.now():%Y%m%dT%H%M%S}"
     configs: list[dict] = []
+    node_list_for_label = args.nodes.split(",") if args.nodes else []
+    is_replicate = getattr(args, "replicate", False)
 
     for idx, files in enumerate(sim_input_sets):
-        work_dir = setup_work_directory("data/output/dynamics", dyn_type)
+        # When replicating, embed the node name in the dir so each replica
+        # gets its own work directory even within the same second.
+        if is_replicate and node_list_for_label:
+            node_tag = node_list_for_label[idx % len(node_list_for_label)]
+            work_dir = os.path.abspath(
+                os.path.join("data/output/dynamics",
+                             f"run_{dyn_type}_{timestamp}_{node_tag}")
+            )
+            os.makedirs(work_dir, exist_ok=True)
+        else:
+            work_dir = setup_work_directory("data/output/dynamics", dyn_type)
         config: dict = {
             "sim_type":       sim_id,
             "sim_type_label": label,
@@ -973,6 +1013,10 @@ def _run_hpc_dynamics(args: Namespace) -> int:
         t.add_row("SLURM partition", args.partition)
     if args.nodes:
         t.add_row("Nodes",           args.nodes)
+    if use_mpi:
+        t.add_row("Mode", f"[bold magenta]MPI ({n_nodes} nodes)[/] — domain decomposition")
+    elif getattr(args, "replicate", False):
+        t.add_row("Mode",            f"[bold yellow]replicate[/bold yellow] — same sim on each node")
     t.add_row("Config list",       master_json)
     console.print()
     console.print(t)
@@ -985,60 +1029,114 @@ def _run_hpc_dynamics(args: Namespace) -> int:
         console.print()
         return 0
 
-    script_path = os.path.join(
+    _native_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "hpc", "slurm", "native", "run_dynamics_pipeline.sh",
+        "hpc", "slurm", "native",
     )
 
-    if not os.path.isfile(script_path):
-        err_console.print(
-            f"\n[bold red]Error:[/] Pipeline script not found: [cyan]{script_path}[/]\n"
-        )
-        return 1
+    if use_mpi:
+        # ── MPI path: submit one multi-node sbatch job directly ──────────────
+        mpi_slurm = os.path.join(_native_dir, "dynamics_mpi.slurm")
+        if not os.path.isfile(mpi_slurm):
+            err_console.print(
+                f"\n[bold red]Error:[/] MPI SLURM script not found: [cyan]{mpi_slurm}[/]\n"
+            )
+            return 1
 
-    env_overrides: dict = {
-        "DYN_TYPE":         dyn_type,
-        "DYN_NS_TIME":      str(args.time),
-        "DYN_CHARGE":       str(args.charge),
-        "DYN_CONFIGS_JSON": master_json,
-        "DYN_TIME_LIMIT":   args.time_limit,
-        "DYN_MEM":          args.mem,
-        "DYN_CPUS":         str(args.cpus),
-    }
-    if args.partition:
-        env_overrides["SLURM_PARTITION"] = args.partition
-    if args.nodes:
-        env_overrides["SLURM_NODELIST"] = args.nodes
-
-    env = {**os.environ, **env_overrides}
-    result = subprocess.run(["bash", script_path], env=env)
-
-    # --- Results table ---
-    rt = Table(
-        title="[bold cyan]Submitted Jobs[/]",
-        box=rich_box.ROUNDED,
-        border_style="cyan",
-        header_style="bold cyan",
-        min_width=60,
-    )
-    rt.add_column("#",         style="dim",  justify="right")
-    rt.add_column("Type",      style="bold")
-    rt.add_column("Work dir",  style="dim")
-    if args.nodes:
-        rt.add_column("Node", style="cyan")
-
-    node_list = args.nodes.split(",") if args.nodes else []
-    for i, cfg in enumerate(configs):
-        row = [str(i + 1), label, cfg["work_dir"]]
+        cfg = configs[0]
+        sbatch_cmd = [
+            "sbatch",
+            f"--nodes={n_nodes}",
+            f"--ntasks={n_nodes}",
+            "--ntasks-per-node=1",
+        ]
+        if args.partition:
+            sbatch_cmd.append(f"--partition={args.partition}")
         if args.nodes:
-            row.append(node_list[i % len(node_list)])
-        rt.add_row(*row)
+            sbatch_cmd.append(f"--nodelist={args.nodes}")
+        sbatch_cmd += [
+            f"--time={args.time_limit}",
+            f"--mem={args.mem}",
+            f"--cpus-per-task={args.cpus}",
+            "--export=ALL,"
+            f"DYN_CONFIG_JSON={cfg['_config_path']},"
+            f"DYN_WORK_DIR={cfg['work_dir']},"
+            f"DYN_TIME_LIMIT={args.time_limit}",
+            mpi_slurm,
+        ]
+        result = subprocess.run(sbatch_cmd)
 
-    console.print()
-    console.print(rt)
-    console.print()
+        rt = Table(
+            title="[bold cyan]Submitted MPI Job[/]",
+            box=rich_box.ROUNDED,
+            border_style="cyan",
+            header_style="bold cyan",
+            min_width=60,
+        )
+        rt.add_column("#",        style="dim",  justify="right")
+        rt.add_column("Type",     style="bold")
+        rt.add_column("Mode",     style="magenta")
+        rt.add_column("Work dir", style="dim")
+        rt.add_row("1", label, f"MPI ({n_nodes} nodes)", cfg["work_dir"])
 
-    return result.returncode
+        console.print()
+        console.print(rt)
+        console.print()
+        return result.returncode
+
+    else:
+        # ── Normal path: submit N independent jobs via shell script ──────────
+        script_path = os.path.join(_native_dir, "run_dynamics_pipeline.sh")
+
+        if not os.path.isfile(script_path):
+            err_console.print(
+                f"\n[bold red]Error:[/] Pipeline script not found: [cyan]{script_path}[/]\n"
+            )
+            return 1
+
+        env_overrides: dict = {
+            "DYN_TYPE":         dyn_type,
+            "DYN_NS_TIME":      str(args.time),
+            "DYN_CHARGE":       str(args.charge),
+            "DYN_CONFIGS_JSON": master_json,
+            "DYN_TIME_LIMIT":   args.time_limit,
+            "DYN_MEM":          args.mem,
+            "DYN_CPUS":         str(args.cpus),
+        }
+        if args.partition:
+            env_overrides["SLURM_PARTITION"] = args.partition
+        if args.nodes:
+            env_overrides["SLURM_NODELIST"] = args.nodes
+
+        env = {**os.environ, **env_overrides}
+        result = subprocess.run(["bash", script_path], env=env)
+
+        # --- Results table ---
+        rt = Table(
+            title="[bold cyan]Submitted Jobs[/]",
+            box=rich_box.ROUNDED,
+            border_style="cyan",
+            header_style="bold cyan",
+            min_width=60,
+        )
+        rt.add_column("#",         style="dim",  justify="right")
+        rt.add_column("Type",      style="bold")
+        rt.add_column("Work dir",  style="dim")
+        if args.nodes:
+            rt.add_column("Node", style="cyan")
+
+        node_list = args.nodes.split(",") if args.nodes else []
+        for i, cfg in enumerate(configs):
+            row = [str(i + 1), label, cfg["work_dir"]]
+            if args.nodes:
+                row.append(node_list[i % len(node_list)])
+            rt.add_row(*row)
+
+        console.print()
+        console.print(rt)
+        console.print()
+
+        return result.returncode
 
 
 # ── Shell completion ───────────────────────────────────────────────────────────
@@ -1583,10 +1681,14 @@ def build_parser() -> _Parser:
     hpc_dyn.add_argument("--time-limit", dest="time_limit", default="72:00:00",
                          metavar="HH:MM:SS",
                          help="Wall time per job  [72:00:00]")
-    hpc_dyn.add_argument("--mem", default="32G", metavar="MEM",
-                         help="Memory per job  [32G]")
+    hpc_dyn.add_argument("--mem", default="0", metavar="MEM",
+                         help="Memory per job — use '0' for all available on the node  [0]")
     hpc_dyn.add_argument("--cpus", type=int, default=8, metavar="N",
                          help="CPUs per job  [8]")
+    hpc_dyn.add_argument("--replicate", action="store_true",
+                         help="Submit the same simulation to every node in --nodes (benchmark/comparison mode)")
+    hpc_dyn.add_argument("--mpi", action="store_true",
+                         help="Single simulation across all --nodes via MPI domain decomposition (test 1 GbE overhead)")
     hpc_dyn.add_argument("--dry-run", action="store_true",
                          help="Print configuration without submitting jobs")
     hpc_dyn.set_defaults(handler=_run_hpc_dynamics)

@@ -1,11 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=cl_dynamics
+#SBATCH --job-name=cl_dyn_mpi
+#SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=0
 #SBATCH --time=72:00:00
-#SBATCH --output=/tmp/cl_dynamics_%j.out
-#SBATCH --error=/tmp/cl_dynamics_%j.err
+#SBATCH --output=/tmp/cl_dyn_mpi_%j.out
+#SBATCH --error=/tmp/cl_dyn_mpi_%j.err
 
 set -euo pipefail
 
@@ -31,24 +33,33 @@ if [[ ! -f "${DYN_CONFIG_JSON}" ]]; then
   exit 1
 fi
 
+# --- Resolve nodelist to comma-separated hostnames ---
+NODES_CSV="$(scontrol show hostname "${SLURM_NODELIST}" | paste -sd,)"
+
 echo "[$(date)] Host        : $(hostname)"
 echo "[$(date)] Job ID      : ${SLURM_JOB_ID:-local}"
+echo "[$(date)] Nodes       : ${SLURM_NODELIST}  →  ${NODES_CSV}"
+echo "[$(date)] NTASKS      : ${SLURM_NTASKS}"
 echo "[$(date)] Config      : ${DYN_CONFIG_JSON}"
 echo "[$(date)] Work dir    : ${DYN_WORK_DIR}"
 echo "[$(date)] Time limit  : ${DYN_TIME_LIMIT}"
-echo "[$(date)] GPU info    :"
-nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader 2>/dev/null || echo "  (nvidia-smi not available)"
+echo "[$(date)] GPU info per node:"
+srun --ntasks="${SLURM_NTASKS}" --ntasks-per-node=1 \
+    nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader 2>/dev/null || true
 
 cd "${REPO_DIR}"
 export PYTHONPATH="/nfs/chemlink:${PYTHONPATH:-}"
 
+export DYN_MPI_TASKS="${SLURM_NTASKS}"
+export DYN_MPI_HOSTS="${NODES_CSV}"
+
 "${PYTHON_BIN}" -m hpc.slurm.runner.dynamics_runner "${DYN_CONFIG_JSON}"
 
-echo "[$(date)] Dynamics job ${SLURM_JOB_ID:-local} completed"
+echo "[$(date)] MPI dynamics job ${SLURM_JOB_ID:-local} completed"
 
 # --- Copy logs to work dir ---
 if [[ -n "${DYN_WORK_DIR}" && -d "${DYN_WORK_DIR}" ]]; then
   JOB_ID="${SLURM_JOB_ID:-local}"
-  [[ -f "/tmp/cl_dynamics_${JOB_ID}.out" ]] && cp "/tmp/cl_dynamics_${JOB_ID}.out" "${DYN_WORK_DIR}/slurm_${JOB_ID}.out" || true
-  [[ -f "/tmp/cl_dynamics_${JOB_ID}.err" ]] && cp "/tmp/cl_dynamics_${JOB_ID}.err" "${DYN_WORK_DIR}/slurm_${JOB_ID}.err" || true
+  [[ -f "/tmp/cl_dyn_mpi_${JOB_ID}.out" ]] && cp "/tmp/cl_dyn_mpi_${JOB_ID}.out" "${DYN_WORK_DIR}/slurm_${JOB_ID}.out" || true
+  [[ -f "/tmp/cl_dyn_mpi_${JOB_ID}.err" ]] && cp "/tmp/cl_dyn_mpi_${JOB_ID}.err" "${DYN_WORK_DIR}/slurm_${JOB_ID}.err" || true
 fi

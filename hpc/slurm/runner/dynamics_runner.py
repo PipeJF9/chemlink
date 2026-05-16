@@ -9,6 +9,7 @@ Usage (from SLURM script):
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 
@@ -36,6 +37,17 @@ def main() -> int:
             except ImportError as exc:
                 print(f"[dynamics_runner] Cannot import DynamicsPipeline: {exc}", flush=True)
                 return 1
+
+    # ── MPI injection ─────────────────────────────────────────────────────────
+    mpi_tasks = int(os.environ.get("DYN_MPI_TASKS", "1"))
+    mpi_hosts = os.environ.get("DYN_MPI_HOSTS", "")
+    if mpi_tasks > 1:
+        config["mpi_tasks"] = mpi_tasks
+        config["mpi_hosts"] = mpi_hosts
+        print(
+            f"[dynamics_runner] MPI mode: {mpi_tasks} tasks, hosts: {mpi_hosts or '(default)'}",
+            flush=True,
+        )
 
     print(f"[dynamics_runner] Starting simulation: {config.get('sim_type_label', '?')} "
           f"({config.get('ns_time', '?')} ns)", flush=True)

@@ -7,7 +7,7 @@ from datetime import datetime
 from multiprocessing import cpu_count
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Optional, Dict, List, Any
-from tqdm import tqdm
+from ....utils.progress import step_bar_iter
 
 from ....storage.file_manager import create_folder, list_files_in_directory, find_compound_name
 from ....utils.logger import setup_logger
@@ -248,7 +248,9 @@ class ReceptorPreparation:
         )
 
         if n_workers == 1:
-            for receptor_file in tqdm(files, desc="Progress", unit="receptor", ncols=80):
+            for receptor_file in step_bar_iter(
+                files, "Receptor Preparation", unit="receptor", colour="blue"
+            ):
                 receptor_name = find_compound_name(receptor_file)
                 try:
                     self._prepare_single(receptor_file)
@@ -274,12 +276,9 @@ class ReceptorPreparation:
 
             with ProcessPoolExecutor(max_workers=n_workers) as executor:
                 futures = [executor.submit(_prepare_receptor_worker, task) for task in tasks]
-                for future in tqdm(
-                    as_completed(futures),
-                    total=len(futures),
-                    desc="Progress",
-                    unit="receptor",
-                    ncols=80,
+                for future in step_bar_iter(
+                    as_completed(futures), "Receptor Preparation",
+                    total=len(futures), unit="receptor", colour="blue",
                 ):
                     result = future.result()
                     receptor_name = result["receptor"]

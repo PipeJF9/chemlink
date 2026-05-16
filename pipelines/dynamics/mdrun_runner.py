@@ -1,33 +1,24 @@
 """
 mdrun_runner.py
-Streaming runner for GROMACS mdrun.
+Streaming runner for GROMACS mdrun with Rich live progress.
 
-Why the old pipe approach didn't work
---------------------------------------
-GROMACS is a C program.  When its stderr is attached to a pipe instead of a
-terminal, the C runtime switches to *full* (block) buffering.  Python's
-``bufsize=1`` only controls the Python-side buffer; it cannot force the child
-process to flush.  As a result, output was only visible once the 4-8 kB C
-buffer filled — effectively at the very end of the run.
-
-What we do instead
--------------------
+Progress architecture
+----------------------
 Primary source  — GROMACS .log file (nvt.log / npt.log / md.log).
-  GROMACS writes this file with explicit fflush() every ``nstlog`` steps,
-  so data is available in real time regardless of pipe buffering.
-  We tail it in a background thread.
+  GROMACS writes this file with fflush() every nstlog steps regardless
+  of pipe buffering, so data is always available in real time.
+  A background thread tails it.
 
-Secondary source — stderr with stdbuf.
-  If ``stdbuf`` is installed, we prepend ``stdbuf -oL -eL`` to the command,
-  which forces line-buffered stderr.  This gives us GPU-init diagnostics
-  before the first nstlog checkpoint.  Falls back gracefully if not present.
+Secondary source — stderr via stdbuf.
+  When stdbuf is present the command is wrapped with ``stdbuf -oL -eL``
+  to force line-buffered stderr, giving GPU-init diagnostics before the
+  first nstlog checkpoint.
 
-Progress display
------------------
-* Step N / total  (from log file Step-Time table, every nstlog steps)
-* Live ns/day     (computed from steps done and wall-clock time)
-* Live ETA        (from the same ratio)
-* Final ns/day    (from GROMACS Performance line at end of .log)
+Display
+--------
+  ◆ <phase>  [⣿⣿⣿⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀]  67%  │  34000/50000 step  │  230.4 ns/day  │  ETA 1m 23s
+
+GPU / note / perf lines are printed above the live bar via Rich console.
 """
 from __future__ import annotations
 
@@ -41,7 +32,13 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 import logging
 
-from tqdm import tqdm
+from rich.progress import Progress, TextColumn, MofNCompleteColumn, TimeElapsedColumn
+
+from utils.progress import (
+    BrailleBar, NsDayColumn, EtaColumn,
+    console as _cons,
+    make_dynamics_progress,
+)
 
 # ── Patterns: GROMACS .log file ───────────────────────────────────────────────
 _RE_LOG_STEP_HDR = re.compile(r"^\s+Step\s+Time\s*$")
@@ -55,7 +52,7 @@ _RE_LOG_GPU      = re.compile(
 _RE_LOG_NOTE     = re.compile(r"^\s*(?:NOTE|WARNING):", re.I)
 _RE_LOG_DISABLED = re.compile(r"disabled|not offload|falling back|skipping", re.I)
 
-# ── Patterns: stderr (early GPU init output, fallback step lines) ─────────────
+# ── Patterns: stderr ──────────────────────────────────────────────────────────
 _RE_STDERR_FATAL = re.compile(r"Fatal error|FATAL ERROR")
 _RE_STDERR_GPU   = re.compile(r"(?:Offload|GPU info|compute cap|stat:|CUDA error)", re.I)
 _RE_STDERR_NOTE  = re.compile(r"^\s*(?:NOTE|WARNING):", re.I)
@@ -63,14 +60,21 @@ _RE_STDERR_STEP  = re.compile(
     r"step\s+(\d+).*?remaining wall clock time:\s*([\d.]+)\s*s", re.I
 )
 
-_BAR_FMT = (
-    "{desc:<36} {percentage:3.0f}%|{bar}| "
-    "step {n_fmt}/{total_fmt} [{elapsed}<{remaining}]  {postfix}"
-)
-
 # dt used in all our MDP files (ps)
 _DT_PS = 0.002
 
+# ── Rich tag helpers ──────────────────────────────────────────────────────────
+def _tag(label: str, style: str, phase: str) -> str:
+    return f"[{style}][ {label} │ {phase} ][/{style}]"
+
+_GPU_OK  = lambda p: _tag("GPU ✓", "bold bright_green", p)
+_GPU_BAD = lambda p: _tag("GPU ✗", "bold red", p)
+_NOTE    = lambda p: _tag("NOTE",  "bold yellow",       p)
+_PERF    = lambda p: _tag("PERF",  "bold bright_cyan",  p)
+_FATAL   = lambda p: _tag("FATAL", "bold white on red",  p)
+
+
+# ── Result dataclass ──────────────────────────────────────────────────────────
 
 @dataclass
 class MdrunResult:
@@ -91,19 +95,40 @@ def _get_deffnm(cmd: List[str]) -> str:
 
 
 def _maybe_stdbuf(cmd: List[str]) -> List[str]:
-    """Prepend stdbuf -oL -eL when available to force line-buffered stderr."""
     exe = shutil.which("stdbuf")
     return ([exe, "-oL", "-eL"] + cmd) if exe else cmd
 
 
-def _compute_live_metrics(step: int, total_steps: int, t_start: float, dt_ps: float):
-    """Return (ns_per_day, eta_s) from current progress."""
+def _is_mpich() -> bool:
+    """Return True if the system mpirun is MPICH/Hydra (not OpenMPI)."""
+    try:
+        r = subprocess.run(["mpirun", "--version"], capture_output=True,
+                           text=True, timeout=5)
+        return "HYDRA" in r.stdout or "HYDRA" in r.stderr or "mpich" in (r.stdout + r.stderr).lower()
+    except Exception:
+        return False
+
+
+def _build_mpi_prefix(n_tasks: int, hosts: str) -> List[str]:
+    """Build a mpirun prefix compatible with the installed MPI (MPICH or OpenMPI)."""
+    prefix = ["mpirun", "-np", str(n_tasks)]
+    if hosts:
+        if _is_mpich():
+            prefix += ["-hosts", hosts, "-iface", "eno1"]
+        else:
+            prefix += ["-host", hosts,
+                       "--mca", "btl_tcp_if_include", "eno1",
+                       "--mca", "btl", "^openib"]
+    return prefix
+
+
+def _live_metrics(step: int, total: int, t_start: float):
     elapsed = time.monotonic() - t_start
     if step <= 0 or elapsed < 1.0:
         return 0.0, 0.0
-    sim_ns   = step * dt_ps / 1000.0
-    ns_day   = sim_ns / (elapsed / 86400.0)
-    eta_s    = elapsed * (total_steps - step) / step
+    sim_ns  = step * _DT_PS / 1000.0
+    ns_day  = sim_ns / (elapsed / 86400.0)
+    eta_s   = elapsed * (total - step) / step
     return ns_day, eta_s
 
 
@@ -117,9 +142,13 @@ def run_mdrun_streaming(
     total_steps: int,
     logger: logging.Logger,
     timeout: Optional[int] = None,
+    mpi_tasks: int = 1,
+    mpi_hosts: str = "",
 ) -> MdrunResult:
-    """
-    Run one GROMACS mdrun attempt with real-time progress from the .log file.
+    """Run one GROMACS mdrun attempt with real-time Rich progress.
+
+    When mpi_tasks > 1, the mdrun command is wrapped with mpirun for
+    domain decomposition across multiple nodes.
 
     Raises subprocess.CalledProcessError on non-zero exit.
     """
@@ -128,35 +157,42 @@ def run_mdrun_streaming(
     log_path = os.path.join(work_dir, f"{deffnm}.log")
     t_start  = time.monotonic()
 
+    if mpi_tasks > 1:
+        # GROMACS 2025+ requires -npme when using -pme gpu with multiple ranks.
+        if "-pme" in cmd and cmd[cmd.index("-pme") + 1] == "gpu" and "-npme" not in cmd:
+            cmd = cmd + ["-npme", "1"]
+        mpi_prefix = _build_mpi_prefix(mpi_tasks, mpi_hosts)
+        cmd = mpi_prefix + cmd
+        logger.info(
+            "[%s] MPI mode active — %d tasks, hosts: %s  prefix: %s",
+            phase, mpi_tasks, mpi_hosts or "(default)", " ".join(mpi_prefix),
+        )
+
     actual_cmd = _maybe_stdbuf(cmd)
-    stdbuf_tag = " [+stdbuf]" if actual_cmd is not cmd and len(actual_cmd) > len(cmd) else ""
+    stdbuf_tag = " [+stdbuf]" if len(actual_cmd) > len(cmd) else ""
     logger.info("[%s] mdrun START%s  cmd: %s", phase, stdbuf_tag, " ".join(cmd))
     logger.info("[%s] tailing log: %s", phase, log_path)
 
-    bar = tqdm(
-        total=total_steps,
-        desc=f"  └─ {phase}",
-        bar_format=_BAR_FMT,
-        dynamic_ncols=True,
-        leave=False,
-        unit="step",
-    )
+    phase_label = f"[bold magenta]◆ {phase}[/bold magenta]"
 
-    last_step: int   = 0
+    progress  = make_dynamics_progress()
+    progress.start()
+    task_id   = progress.add_task(phase_label, total=total_steps,
+                                  ns_day=0.0, eta_s=0.0)
+
+    last_step: int       = 0
     stderr_lines: List[str] = []
     _done = threading.Event()
 
-    # ── Thread A: tail GROMACS .log (primary progress source) ─────────────────
+    # ── Thread A: tail .log file ──────────────────────────────────────────────
     def _tail_log() -> None:
         nonlocal last_step
 
-        # Wait for GROMACS to create the log file (up to 60 s)
         deadline = time.monotonic() + 60
         while not os.path.exists(log_path):
             if _done.is_set() or time.monotonic() > deadline:
-                logger.warning(
-                    "[%s] Log file not found after 60 s: %s", phase, log_path
-                )
+                logger.warning("[%s] Log file not found after 60 s: %s",
+                               phase, log_path)
                 return
             time.sleep(0.5)
 
@@ -172,19 +208,23 @@ def run_mdrun_streaming(
 
                 buf += chunk
                 lines = buf.split("\n")
-                buf = lines[-1]          # keep any incomplete trailing line
+                buf = lines[-1]
 
                 for line in lines[:-1]:
-                    # ── GPU / offload lines ────────────────────────────────
+                    # ── GPU offload lines ─────────────────────────────────
                     if _RE_LOG_GPU.search(line):
                         stripped = line.strip()
                         if _RE_LOG_DISABLED.search(line):
                             result.disabled.append(stripped)
-                            tqdm.write(f"[GPU DISABLED | {phase}] {stripped}")
+                            progress.console.print(
+                                f"  {_GPU_BAD(phase)}  {stripped}"
+                            )
                             logger.warning("[%s] %s", phase, stripped)
                         else:
                             result.gpu_offloads.append(stripped)
-                            tqdm.write(f"[GPU | {phase}] {stripped}")
+                            progress.console.print(
+                                f"  {_GPU_OK(phase)}  {stripped}"
+                            )
                             logger.info("[%s] %s", phase, stripped)
                         continue
 
@@ -192,11 +232,13 @@ def run_mdrun_streaming(
                     if _RE_LOG_NOTE.match(line):
                         stripped = line.strip()
                         result.notes.append(stripped)
-                        tqdm.write(f"[NOTE | {phase}] {stripped}")
+                        progress.console.print(
+                            f"  {_NOTE(phase)}  {stripped}"
+                        )
                         logger.warning("[%s] %s", phase, stripped)
                         continue
 
-                    # ── Step/Time table header ─────────────────────────────
+                    # ── Step/Time header → next line has step number ───────
                     if _RE_LOG_STEP_HDR.match(line):
                         after_hdr = True
                         continue
@@ -208,33 +250,30 @@ def run_mdrun_streaming(
                             step  = int(m.group(1))
                             delta = max(0, step - last_step)
                             if delta > 0:
-                                bar.update(delta)
+                                progress.advance(task_id, delta)
                                 last_step = step
-                                ns_day, eta_s = _compute_live_metrics(
-                                    step, total_steps, t_start, _DT_PS
+                                ns_day, eta_s = _live_metrics(
+                                    step, total_steps, t_start
                                 )
-                                bar.set_postfix({
-                                    "ns/day": f"{ns_day:.1f}",
-                                    "ETA":    f"{int(eta_s)}s",
-                                })
+                                progress.update(task_id,
+                                                ns_day=ns_day, eta_s=eta_s)
                         continue
 
-                    # ── Performance (end of run) ───────────────────────────
+                    # ── Performance line (end of run) ─────────────────────
                     m = _RE_LOG_PERF.match(line)
                     if m:
                         result.ns_per_day = float(m.group(1))
-                        h_per_ns = float(m.group(2))
-                        tqdm.write(
-                            f"\n[PERF | {phase}]  {result.ns_per_day:.3f} ns/day"
-                            f"  ({h_per_ns:.3f} h/ns)"
+                        h_per_ns          = float(m.group(2))
+                        progress.console.print(
+                            f"\n  {_PERF(phase)}  "
+                            f"[bold]{result.ns_per_day:.3f} ns/day[/bold]"
+                            f"  [dim]({h_per_ns:.3f} h/ns)[/dim]"
                         )
-                        logger.info(
-                            "[%s] Performance: %.3f ns/day  (%.3f h/ns)",
-                            phase, result.ns_per_day, h_per_ns,
-                        )
-                        bar.set_postfix({"ns/day": f"{result.ns_per_day:.2f}"})
+                        logger.info("[%s] Performance: %.3f ns/day  (%.3f h/ns)",
+                                    phase, result.ns_per_day, h_per_ns)
+                        progress.update(task_id, ns_day=result.ns_per_day)
 
-    # ── Thread B: stderr (GPU init + fallback steps before first nstlog) ──────
+    # ── Thread B: stderr (GPU init + fallback steps) ──────────────────────────
     def _read_stderr(pipe) -> None:
         nonlocal last_step
         for raw in pipe:
@@ -244,26 +283,25 @@ def run_mdrun_streaming(
             stderr_lines.append(line)
 
             if _RE_STDERR_FATAL.search(line):
-                tqdm.write(f"[FATAL | {phase}] {line}")
+                progress.console.print(f"  {_FATAL(phase)}  {line}")
                 logger.error("[%s] FATAL: %s", phase, line)
                 continue
             if _RE_STDERR_GPU.search(line):
-                tqdm.write(f"[GPU | {phase}] {line}")
+                progress.console.print(f"  {_GPU_OK(phase)}  {line}")
                 logger.info("[%s] %s", phase, line)
                 continue
             if _RE_STDERR_NOTE.match(line):
-                tqdm.write(f"[NOTE | {phase}] {line}")
+                progress.console.print(f"  {_NOTE(phase)}  {line}")
                 logger.warning("[%s] %s", phase, line)
                 continue
-            # Fallback: step lines on stderr (only effective when stdbuf is present)
             m = _RE_STDERR_STEP.search(line)
             if m and last_step == 0:
                 step  = int(m.group(1))
                 eta_s = float(m.group(2))
                 delta = max(0, step - last_step)
-                bar.update(delta)
+                progress.advance(task_id, delta)
                 last_step = step
-                bar.set_postfix({"ETA": f"{int(eta_s)}s"})
+                progress.update(task_id, eta_s=eta_s)
 
     def _drain(pipe) -> None:
         for _ in pipe:
@@ -279,9 +317,11 @@ def run_mdrun_streaming(
         bufsize=1,
     )
 
-    t_log    = threading.Thread(target=_tail_log,              daemon=True)
-    t_stderr = threading.Thread(target=_read_stderr, args=(proc.stderr,), daemon=True)
-    t_stdout = threading.Thread(target=_drain,       args=(proc.stdout,), daemon=True)
+    t_log    = threading.Thread(target=_tail_log,                daemon=True)
+    t_stderr = threading.Thread(target=_read_stderr,
+                                args=(proc.stderr,), daemon=True)
+    t_stdout = threading.Thread(target=_drain,
+                                args=(proc.stdout,), daemon=True)
     t_log.start()
     t_stderr.start()
     t_stdout.start()
@@ -292,19 +332,20 @@ def run_mdrun_streaming(
         proc.kill()
         proc.communicate()
         _done.set()
-        bar.close()
+        progress.stop()
         raise RuntimeError(f"[{phase}] mdrun timed out after {timeout}s")
     finally:
         _done.set()
         t_stderr.join(timeout=10)
         t_log.join(timeout=8)
         t_stdout.join(timeout=5)
-        # Ensure bar reaches 100 % on success
+
         if proc.returncode == 0:
             remaining = max(0, total_steps - last_step)
             if remaining:
-                bar.update(remaining)
-        bar.close()
+                progress.advance(task_id, remaining)
+
+        progress.stop()
 
     result.wall_time_s = time.monotonic() - t_start
 
@@ -319,13 +360,14 @@ def run_mdrun_streaming(
         )
 
     logger.info(
-        "[%s] mdrun DONE  wall=%.1fs | ns/day=%.3f | gpu_lines=%d | disabled=%d | notes=%d",
+        "[%s] mdrun DONE  wall=%.1fs | ns/day=%.3f | gpu_lines=%d"
+        " | disabled=%d | notes=%d",
         phase, result.wall_time_s, result.ns_per_day,
         len(result.gpu_offloads), len(result.disabled), len(result.notes),
     )
     if result.disabled:
         logger.warning(
-            "[%s] Disabled GPU offloads detected:\n  %s",
+            "[%s] Disabled GPU offloads:\n  %s",
             phase, "\n  ".join(result.disabled),
         )
     return result
@@ -341,19 +383,28 @@ def run_mdrun_with_fallback(
     logger: logging.Logger,
     use_gpu: bool,
     timeout: Optional[int] = None,
+    mpi_tasks: int = 1,
+    mpi_hosts: str = "",
 ) -> MdrunResult:
-    """Run mdrun GPU-first; on CalledProcessError fall back to CPU."""
+    """Run mdrun GPU-first; on CalledProcessError fall back to CPU.
+
+    When mpi_tasks > 1, the primary (GPU) attempt uses MPI domain
+    decomposition.  The CPU fallback intentionally runs without MPI
+    so a single-node retry is always available.
+    """
     first_cmd = cmd_gpu if use_gpu else cmd_cpu
     try:
         return run_mdrun_streaming(
             first_cmd,
             work_dir=work_dir, phase=phase,
             total_steps=total_steps, logger=logger, timeout=timeout,
+            mpi_tasks=mpi_tasks, mpi_hosts=mpi_hosts,
         )
     except (subprocess.CalledProcessError, RuntimeError) as exc:
         if not use_gpu:
             raise
-        logger.warning("[%s] GPU run failed (%s) — retrying on CPU.", phase, exc)
+        logger.warning("[%s] GPU run failed (%s) — retrying on CPU (no MPI).", phase, exc)
+        # CPU fallback deliberately omits MPI — runs on local node only.
         return run_mdrun_streaming(
             cmd_cpu,
             work_dir=work_dir, phase=phase,

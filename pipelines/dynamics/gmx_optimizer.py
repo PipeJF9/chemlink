@@ -101,7 +101,7 @@ def get_optimal_mdrun_flags(config: Dict[str, Any]) -> Dict[str, Any]:
     if use_update_gpu:
         gpu_flags += ["-update", "gpu"]
 
-    cpu_flags: List[str] = ["-ntomp", str(total_cpus), "-pin", "on"]
+    cpu_flags: List[str] = ["-ntomp", str(ntomp), "-pin", "on"]
 
     # ── nstlist: starting value for GROMACS auto-tuner ─────────────────────────
     # GROMACS will override this upward (to ~80-100 for GPU runs), so this is

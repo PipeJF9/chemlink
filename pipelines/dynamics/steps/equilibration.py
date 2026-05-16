@@ -110,6 +110,9 @@ class EquilibrationStep:
         opt = get_optimal_mdrun_flags(self.config)
         use_gpu = bool(self.config.get("gpu_ids"))
 
+        mpi_tasks = int(self.config.get("mpi_tasks", 1))
+        mpi_hosts = self.config.get("mpi_hosts", "")
+
         for msg in opt["diagnostics"]:
             if "WARNING" in msg or "PERF" in msg:
                 self.logger.warning("gmx_optimizer: %s", msg)
@@ -137,6 +140,8 @@ class EquilibrationStep:
                 logger=self.logger,
                 use_gpu=use_gpu,
                 timeout=_MDRUN_TIMEOUT,
+                mpi_tasks=mpi_tasks,
+                mpi_hosts=mpi_hosts,
             )
 
             # ── NPT ───────────────────────────────────────────────────────────
@@ -158,6 +163,8 @@ class EquilibrationStep:
                 logger=self.logger,
                 use_gpu=use_gpu,
                 timeout=_MDRUN_TIMEOUT,
+                mpi_tasks=mpi_tasks,
+                mpi_hosts=mpi_hosts,
             )
 
             if not os.path.exists(self.npt_gro):
