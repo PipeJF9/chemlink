@@ -440,19 +440,19 @@ Durante las nueve pruebas de docking se recopiló datos de utilización de recur
 
 Los resultados de los benchmarks sistemáticos confirman que ChemLink cumple con los objetivos de eficiencia y reproducibilidad propuestos. La figura 1 presenta la comparación de duración entre los tres modos de ejecución para cada escala de biblioteca.
 
-![Figura 1. Comparación de duración por modo y escala de biblioteca](tests/docking/results/report/fig1_duration_comparison.png)
+![Figura 1. Comparación de duración por modo y escala de biblioteca](diagramas/fig1_duration_comparison.png)
 
 **Figura 1.** Comparación de tiempos de ejecución del pipeline completo de docking en función de la escala de biblioteca (10, 100 y 1.000 ligandos) y el modo de ejecución: nodo único optimizado (24 workers), nodo único mínimo (1 worker) y multinodo SLURM (3 GPUs). Los valores están expresados en minutos.
 
 La figura 2 muestra el throughput (ligandos procesados por minuto) en función de la escala, revelando la capacidad de cada modo para escalar con el tamaño de la biblioteca.
 
-![Figura 2. Throughput por modo de ejecución](tests/docking/results/report/fig2_throughput.png)
+![Figura 2. Throughput por modo de ejecución](diagramas/fig2_throughput.png)
 
 **Figura 2.** Throughput de docking en ligandos por minuto para cada modo de ejecución en función del tamaño de la biblioteca. El modo multinodo muestra el mayor throughput a escala de 1.000 ligandos (31,6 lig/min frente a 18,5 lig/min del modo optimizado).
 
 El análisis de speedup (figura 3) cuantifica la ganancia real del modo multinodo frente al modo nodo único optimizado:
 
-![Figura 3. Speedup multinodo vs nodo único](tests/docking/results/report/fig3_speedup.png)
+![Figura 3. Speedup multinodo vs nodo único](diagramas/fig3_speedup.png)
 
 **Figura 3.** Factor de aceleración (*speedup*) del modo multinodo (3 GPUs) frente al modo nodo único optimizado. Para 100 ligandos se obtuvo un speedup de 2,2×; para 1.000 ligandos, de 1,71×. El decrecimiento relativo del speedup a mayor escala refleja la saturación del ancho de banda de red (1 Gbps) como cuello de botella en la transferencia de lotes desde el NAS.
 
@@ -474,19 +474,19 @@ Un hallazgo significativo fue la capacidad del sistema para detectar fallos en l
 
 Las figuras 12–16 muestran los perfiles temporales de utilización de CPU, GPU, memoria RAM, disco y red durante las pruebas de 1.000 ligandos en modo nodo único optimizado (azul) y nodo único mínimo (rojo). Estos perfiles fueron capturados por el monitor de recursos `monitor_local.py` a intervalos de 10 segundos.
 
-![Figura 4. Utilización de CPU durante docking](tests/docking/results/report/fig12_resource_cpu.png)
+![Figura 4. Utilización de CPU durante docking](diagramas/fig12_resource_cpu.png)
 
 **Figura 4.** Evolución temporal de la utilización de CPU (%) durante el pipeline completo de 1.000 ligandos. El modo optimizado (24 workers) muestra picos sostenidos durante la preparación de ligandos y el análisis de resultados, mientras el modo mínimo (1 worker) presenta una carga de CPU más uniforme y baja.
 
-![Figura 5. Utilización de GPU durante docking](tests/docking/results/report/fig13_resource_gpu.png)
+![Figura 5. Utilización de GPU durante docking](diagramas/fig13_resource_gpu.png)
 
 **Figura 5.** Utilización de GPU (%) durante la ejecución del pipeline de docking. La etapa de docking propiamente dicha produce los picos de mayor utilización de GPU en ambos modos. El perfil confirma que AutoDock-GPU mantiene alta utilización del acelerador durante la fase de búsqueda conformacional.
 
-![Figura 6. Utilización de memoria RAM durante docking](tests/docking/results/report/fig14_resource_memory.png)
+![Figura 6. Utilización de memoria RAM durante docking](diagramas/fig14_resource_memory.png)
 
 **Figura 6.** Evolución del consumo de memoria RAM (%) a lo largo del pipeline. Los picos más altos corresponden a la fase de análisis, cuando el sistema carga en memoria simultáneamente las 1.000.000 de poses para calcular rankings y estadísticas descriptivas.
 
-![Figura 7. Desglose de tiempo por etapa del pipeline](tests/docking/results/report/fig11_time_breakdown.png)
+![Figura 7. Desglose de tiempo por etapa del pipeline](diagramas/fig11_time_breakdown.png)
 
 **Figura 7.** Desglose del tiempo total de ejecución por etapa del pipeline para cada modo y escala de biblioteca. La figura permite identificar qué etapa domina el tiempo total en cada configuración: en el modo optimizado la fase de docking GPU concentra la mayor parte del tiempo de cómputo, mientras que en el modo mínimo la preparación secuencial de ligandos y el análisis tienen mayor peso relativo. En modo multinodo, la distribución en lotes paralelos reduce el tiempo de docking al principal determinante del wall-clock total.
 
@@ -494,11 +494,11 @@ Las figuras 12–16 muestran los perfiles temporales de utilización de CPU, GPU
 
 La figura 8 presenta la duración de cada tipo de simulación de dinámica molecular ejecutada sobre el clúster HPC, evidenciando la diferencia de complejidad computacional entre los seis tipos implementados.
 
-![Figura 8. Duración por tipo de dinámica molecular](tests/dynamics/results/report/fig_01_duration.png)
+![Figura 8. Duración por tipo de dinámica molecular](diagramas/fig_01_duration.png)
 
 **Figura 8.** Tiempo de ejecución de cada tipo de simulación de dinámica molecular (1 ns de tiempo de simulación) sobre el nodo manager (RTX 5060 Ti, 8 cores). Los tipos que incluyen solo proteína o péptido (~15 min) son órdenes de magnitud más rápidos que los sistemas con dos proteínas o ácido nucleico (87–88 min), y ambos muy por debajo del sistema más complejo con dos proteínas y ligando (352 min).
 
-![Figura 9. Utilización de GPU durante dinámica molecular](tests/dynamics/results/report/fig_03_gpu.png)
+![Figura 9. Utilización de GPU durante dinámica molecular](diagramas/fig_03_gpu.png)
 
 **Figura 9.** Utilización de GPU durante las seis simulaciones de dinámica molecular. Se observa cómo sistemas más grandes (pligand, pacid, ppligand) mantienen la GPU en saturación durante períodos mucho más prolongados, mientras que sistemas pequeños (oprotein, ppeptide) presentan ráfagas cortas de actividad GPU intensiva.
 
