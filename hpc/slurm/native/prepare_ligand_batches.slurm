@@ -56,6 +56,19 @@ done
 batch_count="${batch_idx}"
 echo "${batch_count}" > "${BATCH_ROOT}/batch_count.txt"
 
+# Write per-batch sentinel files AFTER all symlinks for ALL batches are in place.
+# Docking array tasks wait for ready_N before accessing batch_N, preventing them
+# from caching an empty directory entry via NFS (which happens when the directory
+# is first seen empty during creation and the mtime doesn't advance fast enough
+# to trigger attribute cache invalidation on remote nodes).
+for (( b=0; b<batch_count; b++ )); do
+  echo "${batch_count}" > "${BATCH_ROOT}/ready_${b}"
+done
+
+# Flush all NFS writes — sentinels, symlinks, and batch_count.txt — to stable storage
+# before SLURM resolves the downstream dependency.
+sync
+
 echo "[$(date)] Prepared ligands: ${count}"
 echo "[$(date)] Batch size: ${BATCH_SIZE}"
 echo "[$(date)] Batch count: ${batch_count}"

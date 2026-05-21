@@ -51,6 +51,10 @@ MAX_GPU_CONCURRENCY="${MAX_GPU_CONCURRENCY:-6}"
 DOCKING_WORKERS="${DOCKING_WORKERS:-1}"
 DOCKING_GRES="${DOCKING_GRES:-}"
 
+# Optional manual grid box (bypasses fpocket when both are set)
+MANUAL_CENTER="${MANUAL_CENTER:-}"
+MANUAL_NPTS="${MANUAL_NPTS:-}"
+
 # --- Opciones SLURM opcionales ---
 SLURM_PARTITION="${SLURM_PARTITION:-}"
 SLURM_ACCOUNT="${SLURM_ACCOUNT:-}"
@@ -108,6 +112,8 @@ echo "Docking array       : ${array_expr}"
 echo "SLURM partition     : ${SLURM_PARTITION:-<default>}"
 echo "Docking GRES        : ${DOCKING_GRES:-<none>}"
 echo "Python              : ${PYTHON_BIN}"
+echo "Manual grid center  : ${MANUAL_CENTER:-<fpocket>}"
+echo "Manual grid npts    : ${MANUAL_NPTS:-<fpocket>}"
 echo "AutoDock-GPU        : ${AUTODOCK_GPU_EXECUTABLE}"
 echo "AutoGrid4           : ${AUTOGRID_EXECUTABLE}"
 echo "MGLTools            : ${MGLTOOLS_PATH}"
@@ -146,6 +152,8 @@ jid_active=$(REPO_DIR="${REPO_DIR}" \
   MGLTOOLS_PATH="${MGLTOOLS_PATH}" \
   FPOCKET_PATH="${FPOCKET_PATH}" \
   ACTIVE_SITE_WORKERS="${ACTIVE_SITE_WORKERS}" \
+  MANUAL_CENTER="${MANUAL_CENTER}" \
+  MANUAL_NPTS="${MANUAL_NPTS}" \
   PYTHON_BIN="${PYTHON_BIN}" \
   sbatch --parsable \
   "${COMMON_SBATCH_ARGS[@]}" \

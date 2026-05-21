@@ -759,6 +759,14 @@ def _run_hpc_docking(args: Namespace) -> int:
         )
         return 1
 
+    manual_center = getattr(args, "manual_center", None)
+    manual_npts   = getattr(args, "manual_npts",   None)
+    if (manual_center is None) != (manual_npts is None):
+        err_console.print(
+            "[bold red]Error:[/] --manual-center and --manual-npts must be used together."
+        )
+        return 1
+
     batch_size = args.batch_size if args.batch_size else _auto_batch_size(max(n_ligands, 1))
     total_batches = max(1, (n_ligands + batch_size - 1) // batch_size) if n_ligands else 1
     prep_tasks    = args.prep_tasks
@@ -795,6 +803,9 @@ def _run_hpc_docking(args: Namespace) -> int:
         env_overrides["SLURM_NODELIST"] = args.nodes
     if mode == "container" and args.container_image:
         env_overrides["CONTAINER_IMAGE"] = args.container_image
+    if manual_center:
+        env_overrides["MANUAL_CENTER"] = " ".join(f"{v:g}" for v in manual_center)
+        env_overrides["MANUAL_NPTS"]   = " ".join(str(v)    for v in manual_npts)
 
     t = Table(
         title="[bold cyan]HPC Docking Configuration[/]",
@@ -817,6 +828,9 @@ def _run_hpc_docking(args: Namespace) -> int:
     t.add_row("Ligand workers",     str(args.ligand_workers))
     t.add_row("Active-site workers",str(args.active_site_workers))
     t.add_row("Docking workers",    str(args.docking_workers))
+    if manual_center:
+        t.add_row("Grid center (manual)", " ".join(f"{v:g}" for v in manual_center))
+        t.add_row("Grid npts (manual)",   " ".join(str(v)    for v in manual_npts))
     if args.partition:
         t.add_row("SLURM partition", args.partition)
     if args.gres:
@@ -1163,7 +1177,7 @@ _chemlink() {
         hpc)
             [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "docking dynamics" -- "$cur") )
             if [[ $depth -ge 3 && "$sub" == "docking" ]]; then
-                COMPREPLY=( $(compgen -W "--ligand-dir --receptor-dir --nodes --partition --gres --batch-size --prep-tasks --receptor-workers --ligand-workers --active-site-workers --docking-workers --max-gpu-concurrency --mode --container-image --dry-run" -- "$cur") )
+                COMPREPLY=( $(compgen -W "--ligand-dir --receptor-dir --nodes --partition --gres --batch-size --prep-tasks --receptor-workers --ligand-workers --active-site-workers --docking-workers --max-gpu-concurrency --manual-center --manual-npts --mode --container-image --dry-run" -- "$cur") )
             fi
             if [[ $depth -ge 3 && "$sub" == "dynamics" ]]; then
                 COMPREPLY=( $(compgen -W "oprotein pligand ppeptide pacid pprotein ppligand --protein --ligands --time --charge --nodes --partition --time-limit --mem --cpus --dry-run" -- "$cur") )
@@ -1645,6 +1659,10 @@ def build_parser() -> _Parser:
                           help="Parallel workers per receptor-prep task  [4]")
     hpc_dock.add_argument("--ligand-workers", type=int, default=8, metavar="N",
                           help="Parallel workers per ligand-prep task  [8]")
+    hpc_dock.add_argument("--manual-center", nargs=3, type=float, metavar=("X", "Y", "Z"),
+                          help="Manual grid center in Å — skips fpocket  (requires --manual-npts)")
+    hpc_dock.add_argument("--manual-npts", nargs=3, type=int, metavar=("NX", "NY", "NZ"),
+                          help="Manual AutoDock grid dimensions  (requires --manual-center)")
     hpc_dock.add_argument("--active-site-workers", type=int, default=4, metavar="N",
                           help="Parallel workers for active-site detection  [4]")
     hpc_dock.add_argument("--docking-workers", type=int, default=1, metavar="N",
