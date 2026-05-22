@@ -1,7 +1,7 @@
 # ChemLink
 
 <div align="center">
-  <img src="docs/chemlink-banner.png" alt="ChemLink Banner" width="700" />
+  <img src="docs/chemlink-banner.png" alt="ChemLink Banner" width="480" />
 </div>
 
 ![ChemLink](https://img.shields.io/badge/ChemLink-v1.0.0-black?style=for-the-badge&logo=gnu-bash&logoColor=white)
