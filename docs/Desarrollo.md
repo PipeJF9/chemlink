@@ -61,7 +61,6 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 │   ├── autodocktools/
 │   ├── autogrid/
 │   └── fpocket/
-├── analysis/
 ├── cli/
 │   └── main.py
 ├── data/
@@ -70,34 +69,46 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 │   │   ├── ligands/
 │   │   └── dynamics/
 │   └── output/
-├── diagramas/
 ├── diseno/
 │   ├── docking/
 │   └── HPC/
+├── docs/
+│   ├── Desarrollo.md         ← este documento
+│   ├── Informe.md
+│   ├── Instalación.md
+│   └── index.html
 ├── hpc/
 │   ├── cluster/
 │   └── slurm/
 │       ├── container/
 │       ├── native/
 │       └── runner/
+├── images/
+│   ├── diagramas/            ← diagramas de arquitectura (PNG)
+│   └── figuras/              ← gráficos de rendimiento (PNG)
 ├── pipelines/
 │   ├── docking/
 │   │   └── steps/
 │   └── dynamics/
-│       └── steps/
+│       ├── steps/
+│       ├── gmx_optimizer.py
+│       ├── md_analysis.py
+│       ├── dccm_analysis.py
+│       ├── mmpbsa_analysis.py
+│       ├── mdrun_runner.py
+│       └── utils.py
 ├── storage/
 ├── tests/
 │   ├── docking/
+│   │   ├── single_node/      ← scripts de prueba por etapa (01–12 × min/opt)
+│   │   └── multinode/        ← scripts de prueba multinodo (01–05)
 │   └── dynamics/
 ├── utils/
 ├── chemlink                  ← entrypoint CLI (script ejecutable)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-├── ARCHITECTURE.md
-├── README.md
-├── Informe_Final_ChemLink.md
-└── Desarrollo.md
+└── README.md
 ```
 
 ### 3.2 Descripción de directorios y archivos relevantes
@@ -108,24 +119,34 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 | `cli/main.py` | Único punto de entrada de la CLI; define todos los subcomandos con `argparse` y coordina la construcción de configuraciones de ejecución |
 | `data/input/` | Datos de entrada del usuario: receptores PDB, biblioteca de ligandos SDF/PDBQT, complejos de dinámica molecular |
 | `data/output/` | Corridas generadas automáticamente con marca temporal (`run_<timestamp>_<uuid>/`) |
-| `diagramas/` | Diagramas de arquitectura, secuencias e interacción de módulos en PNG |
 | `diseno/` | READMEs de diseño del pipeline de docking y de la infraestructura HPC |
+| `docs/` | Documentación del proyecto: `Desarrollo.md`, `Informe.md`, `Instalación.md`, `index.html` |
 | `hpc/cluster/` | `resource_detector.py` (detecta CPU, RAM, GPU, red) y `network_detector.py` (inspecciona conectividad entre nodos) |
 | `hpc/slurm/native/` | Scripts SLURM para ejecución bare-metal sobre NFS; incluye variantes para cada etapa del pipeline y para dinámica molecular (`dynamics.slurm`, `dynamics_mpi.slurm`) |
 | `hpc/slurm/container/` | Scripts SLURM equivalentes para ejecución dentro del contenedor Docker |
 | `hpc/slurm/runner/dynamics_runner.py` | Orquestador Python que construye y envía la cadena de trabajos SLURM para dinámica multinodo |
+| `images/diagramas/` | Diagramas de arquitectura, secuencias e interacción de módulos (PNG) |
+| `images/figuras/` | Gráficos de rendimiento y utilización de recursos de los benchmarks (PNG) |
 | `pipelines/docking/steps/` | Un archivo por etapa: `receptor_preparation.py`, `ligand_preparation.py`, `active_site_detection.py`, `docking_execution.py`, `docking_analysis.py` |
 | `pipelines/dynamics/steps/` | Un archivo por etapa: `complex_builder.py`, `ligand_topology.py`, `topology.py`, `solvation.py`, `ions.py`, `energy_min.py`, `equilibration.py`, `production.py`, `post_processing.py`, `analysis.py` |
 | `pipelines/dynamics/gmx_optimizer.py` | Calcula los parámetros óptimos de `gmx mdrun` (threads, GPUs, PME) según el hardware detectado |
 | `pipelines/dynamics/md_analysis.py` | Análisis de trayectorias: RMSD, Rg, contactos, energía de enlace |
 | `pipelines/dynamics/dccm_analysis.py` | Análisis de correlación dinámica cruzada (DCCM) sobre la trayectoria producida |
 | `pipelines/dynamics/mmpbsa_analysis.py` | Cálculo de energía de unión MM-PBSA (módulo experimental) |
+| `pipelines/dynamics/mdrun_runner.py` | Runner dedicado para invocaciones de `gmx mdrun` con manejo de reintentos y configuración dinámica |
+| `pipelines/dynamics/utils.py` | Utilidades compartidas entre los pasos del pipeline de dinámica |
 | `storage/file_manager.py` | Gestiona creación de directorios de corrida, búsqueda de archivos por patrón y división de bibliotecas multimolécula |
 | `utils/retry.py` | Estrategia de reintento con retroceso exponencial y fallback de comandos alternativos |
 | `utils/progress.py` | Indicadores de progreso basados en `rich` integrados con los pipelines |
-| `tests/docking/` | Suite de benchmarks de docking: `run_docking_benchmark.sh` (9 pruebas), `common.sh` (variables compartidas), `monitor_local.py` (muestrea CPU/GPU/RAM/disco/red), `monitor_job.py` (monitoreo de trabajos SLURM) |
-| `tests/dynamics/` | Suite de benchmarks de dinámica: `run_dynamics_benchmark.sh` (6 tipos de simulación), `common.sh` |
-| `Dockerfile` | Imagen todo-en-uno: Ubuntu 22.04 + CUDA 13.0 + GROMACS 2025.4 + AutoDock-GPU + AutoGrid4 + fpocket + MGLTools + Conda |
+| `tests/docking/single_node/` | Scripts de prueba por etapa individual en nodo único: 12 pruebas × 2 configuraciones (min/opt), numeradas `01`–`12` |
+| `tests/docking/multinode/` | Scripts de prueba de docking multinodo SLURM: 5 pruebas numeradas `01`–`05` |
+| `tests/docking/run_docking_benchmark.sh` | Orquestador principal del benchmark completo de docking |
+| `tests/docking/run_pipeline_benchmark.sh` | Benchmark alternativo centrado en el pipeline completo end-to-end |
+| `tests/docking/collect_stats.py` | Recopila y consolida estadísticas de múltiples corridas de benchmark |
+| `tests/docking/monitor_local.py` | Muestrea CPU, GPU, RAM, disco y red a intervalos configurables durante una ejecución local |
+| `tests/docking/monitor_job.py` | Monitorea los mismos recursos para trabajos SLURM activos vía `sacct` |
+| `tests/dynamics/` | Suite de benchmarks de dinámica: `run_dynamics_benchmark.sh` (6 tipos de simulación), `common.sh`, `monitor_job.py` |
+| `Dockerfile` | Imagen todo-en-uno: Ubuntu 24.04 + CUDA 13.0 + GROMACS 2025.4 + AutoDock-GPU + AutoGrid4 + fpocket + MGLTools + Conda |
 | `docker-compose.yml` | Servicio `chemlink-gpu` con acceso a todas las GPUs del host |
 | `requirements.txt` | Dependencias Python del entorno `bio` (instaladas en el contenedor) |
 | `chemlink` | Script shell ejecutable que activa el entorno y lanza `python -m chemlink.cli.main` |
@@ -159,7 +180,7 @@ El acoplamiento entre capas es deliberadamente bajo: los pipelines no invocan bi
 | Docking: preparación de ligandos | `pipelines/docking/steps/ligand_preparation.py` + `utils/molecule_processor.py` |
 | Docking: mapas de afinidad | `adapters/autogrid/autogrid_adapter.py` |
 | Docking: búsqueda conformacional GPU | `adapters/autodock_gpu/autodock_gpu_adapter.py` |
-| Docking: ranking y análisis | `pipelines/docking/steps/docking_analysis.py` + `analysis/report_generator.py` |
+| Docking: ranking y análisis | `pipelines/docking/steps/docking_analysis.py` |
 | Dinámica: topología y ACPYPE | `pipelines/dynamics/steps/ligand_topology.py` + `steps/topology.py` |
 | Dinámica: cadena GROMACS | `pipelines/dynamics/steps/` (un módulo por fase) |
 | Dinámica: optimización de parámetros | `pipelines/dynamics/gmx_optimizer.py` |
@@ -187,7 +208,7 @@ No se usa una arquitectura multi-contenedor porque el proyecto no tiene frontend
 
 | Archivo | Descripción |
 |---|---|
-| `Dockerfile` | Imagen basada en `nvidia/cuda:13.0.0-devel-ubuntu22.04`; compila desde código fuente GROMACS 2025.4, AutoDock-GPU (sm_89/90/120), AutoGrid4, fpocket; instala MGLTools y los entornos Conda `bio` y `mgl_legacy` |
+| `Dockerfile` | Imagen basada en `nvidia/cuda:13.0.0-devel-ubuntu24.04`; compila desde código fuente GROMACS 2025.4, AutoDock-GPU (sm_89/90/120), AutoGrid4, fpocket; instala MGLTools y los entornos Conda `bio` y `mgl_legacy` |
 | `docker-compose.yml` | Define el servicio `chemlink-gpu` con `deploy.resources.reservations` para acceder a todas las GPUs del host; monta el repositorio en `/app/chemlink` |
 
 ### 5.3 Construcción y ejecución de contenedores
@@ -246,12 +267,17 @@ docker compose exec chemlink-gpu chemlink docking full \
 
 | Script | Ubicación | Descripción |
 |---|---|---|
-| `run_docking_benchmark.sh` | `tests/docking/` | Ejecuta las 9 pruebas de docking (3 escalas × 3 modos) y genera el reporte comparativo |
+| `run_docking_benchmark.sh` | `tests/docking/` | Orquestador principal del benchmark de docking; lanza todas las escalas y modos |
+| `run_pipeline_benchmark.sh` | `tests/docking/` | Benchmark end-to-end del pipeline completo con reporte consolidado |
+| `run_all_single.sh` | `tests/docking/` | Ejecuta en secuencia todos los scripts de prueba de `single_node/` |
+| `single_node/01–12_*.sh` | `tests/docking/single_node/` | Scripts de prueba por etapa individual, 12 pruebas × 2 configuraciones (min/opt) |
+| `multinode/01–05_*.sh` | `tests/docking/multinode/` | Scripts de prueba de docking multinodo sobre SLURM (escalas 10/100/1000 ligandos) |
+| `collect_stats.py` | `tests/docking/` | Recopila y consolida estadísticas de múltiples corridas de benchmark en un CSV único |
+| `monitor_local.py` | `tests/docking/` | Muestrea CPU, GPU, RAM, disco y red a intervalos configurables durante una ejecución local |
+| `monitor_job.py` | `tests/docking/` y `tests/dynamics/` | Monitorea los mismos recursos para trabajos SLURM activos vía `sacct` |
 | `run_dynamics_benchmark.sh` | `tests/dynamics/` | Ejecuta los 6 tipos de simulación de dinámica y registra tiempos de ejecución |
 | `common.sh` (docking) | `tests/docking/` | Variables compartidas: rutas, workers por modo, parámetros multinodo |
 | `common.sh` (dinámica) | `tests/dynamics/` | Variables compartidas para la suite de benchmarks de dinámica |
-| `monitor_local.py` | `tests/docking/` | Muestrea CPU, GPU, RAM, disco y red a intervalos configurables durante una ejecución local |
-| `monitor_job.py` | `tests/docking/` y `tests/dynamics/` | Monitorea los mismos recursos para trabajos SLURM activos vía `sacct` |
 | `run_multinode_pipeline.sh` | `hpc/slurm/native/` | Lanza la secuencia completa de trabajos SLURM encadenados para docking multinodo |
 | `run_dynamics_pipeline.sh` | `hpc/slurm/native/` | Lanza el trabajo SLURM de dinámica molecular |
 
@@ -357,8 +383,7 @@ La estructura en capas define dónde debe implementarse cada tipo de cambio:
 
 ```
 feature/<nombre-funcionalidad>    ← nueva funcionalidad
-fix/<descripción-breve>           ← corrección de errores
-refactor/<módulo>                 ← reestructuración sin cambio de comportamiento
+fix/<descripción-breve>           ← corrección de errores (hotfixes, bugfixes)
 ```
 
 ### 8.3 Ejecución de pruebas y validaciones
@@ -389,24 +414,85 @@ Antes de integrar cambios, verificar manualmente:
 
 ### 8.4 Integración de cambios
 
+Los contribuidores trabajan sobre `feature/*` o `fix/*` y abren Pull Request hacia `develop`. Nunca se hace push directo a `main`.
+
 ```bash
-# Crear rama desde la rama principal de integración
-git checkout merge/pipelines
+# Crear rama desde develop
+git checkout develop
 git checkout -b feature/mi-funcionalidad
+# — o para una corrección —
+git checkout -b fix/error-en-analisis
 
 # Desarrollar y hacer commits descriptivos
 git add adapters/mi_herramienta/
 git commit -m "Add: adaptador para <herramienta> con soporte de sharding"
 
-# Abrir Pull Request hacia merge/pipelines
-gh pr create --title "Add: <descripción>" --base merge/pipelines
+# Abrir Pull Request hacia develop
+gh pr create --title "Add: <descripción>" --base develop
 ```
 
-**Criterios mínimos para integrar:**
+**Criterios mínimos para integrar a `develop`:**
 - `chemlink doctor` pasa sin errores.
 - El pipeline afectado completa una prueba con la escala mínima (10 ligandos / 0.1 ns).
 - No se introducen rutas absolutas hardcodeadas fuera de las variables de entorno establecidas en `common.sh`.
 - Los nuevos scripts SLURM siguen la convención de parametrización por variables de entorno (sin valores fijos de partición, nodos o rutas en el script).
+
+---
+
+### 8.5 Publicación de releases
+
+Los releases se gestionan con el **sistema de releases de GitHub** sobre tags semánticos. No existen ramas `release/*` permanentes: se crean para preparar la versión y se eliminan tras el merge.
+
+#### Paso 1 — Crear la rama de release desde `develop`
+
+```bash
+git checkout develop
+git checkout -b release/v1.2.0
+```
+
+En esta rama se realizan únicamente:
+- Corrección de bugs finales (no funcionalidades nuevas).
+- Actualización del changelog.
+- Cambio de número de versión (si aplica).
+- Pruebas de validación finales.
+
+#### Paso 2 — Merge a `main` y tag
+
+```bash
+git checkout main
+git merge release/v1.2.0
+
+git tag v1.2.0
+git push origin main
+git push origin v1.2.0
+```
+
+#### Paso 3 — Sincronizar `develop`
+
+```bash
+git checkout develop
+git merge release/v1.2.0
+git push origin develop
+```
+
+La rama `release/v1.2.0` puede eliminarse tras el merge.
+
+#### Paso 4 — Publicar en GitHub
+
+En el repositorio: **Releases → Draft a new release**, seleccionar el tag `v1.2.0` y completar:
+- Notas de la versión y changelog.
+- Archivos compilados o artefactos adjuntos (si aplica).
+- Marcar como *latest release*.
+
+#### Esquema de ramas
+
+```
+main          ──── v1.0.0 ──────────────── v1.1.0 ──────────────── v1.2.0
+                      ↑                       ↑                       ↑
+develop       ────────┴── feat/A ── fix/B ───┴── feat/C ── fix/D ───┴──
+                                                              ↑
+release/vX.X.X                                      release/v1.2.0 (temporal)
+```
 
 ---
 
@@ -459,17 +545,20 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 
 | Aspecto | Convención |
 |---|---|
-| Ramas | `merge/pipelines` (integración principal), `feature/`, `fix/`, `refactor/` |
+| Ramas permanentes | `main` (producción estable, solo recibe merges de `release/*`), `develop` (integración continua) |
+| Ramas de trabajo | `feature/<nombre>` para funcionalidad nueva; `fix/<descripción>` para correcciones |
+| Ramas de release | `release/vX.X.X` (temporal, se elimina tras el merge a `main`) |
 | Commits | Prefijo descriptivo: `Add:`, `Fix:`, `Refactor:`, `Update:`, `Remove:`; mensaje en inglés; una idea por commit |
-| Pull Requests | Hacia `merge/pipelines`; descripción con contexto del cambio y cómo probarlo |
+| Pull Requests | Siempre hacia `develop`; descripción con contexto del cambio y cómo probarlo |
+| Releases | Tags semánticos `vX.X.X` sobre `main`; publicados como GitHub Release (ver §8.5) |
 | Archivos ignorados | `data/output/`, `tests/docking/results/`, `tests/dynamics/results/`, `__pycache__/`, `*.egg-info/`, archivos `.pyc` |
 
 ### 10.3 Convenciones de documentación
 
 - `README.md`: instalación rápida y comandos esenciales; debe mantenerse actualizado al agregar nuevos subcomandos.
-- `ARCHITECTURE.md`: visión de alto nivel de la arquitectura en capas; actualizar si se agrega una capa o cambia una responsabilidad fundamental.
-- `Desarrollo.md` (este documento): guía de desarrollo para futuros equipos; actualizar al incorporar nuevas herramientas, cambiar convenciones o identificar nuevos problemas frecuentes.
-- `Informe_Final_ChemLink.md`: documento académico del proyecto; no modificar como parte del flujo de desarrollo ordinario.
+- `docs/Desarrollo.md` (este documento): guía de desarrollo para futuros equipos; actualizar al incorporar nuevas herramientas, cambiar convenciones o identificar nuevos problemas frecuentes.
+- `docs/Informe.md`: documento académico completo del proyecto con benchmarks y análisis; no modificar como parte del flujo de desarrollo ordinario.
+- `docs/Instalación.md`: guía de instalación y configuración del entorno desde cero.
 - Los READMEs de `diseno/docking/` y `diseno/HPC/` documentan las decisiones de diseño de cada módulo; actualizar si se cambia la arquitectura de las etapas.
 
 ---
@@ -482,7 +571,6 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 |---|---|---|
 | **GPU no detectada en SLURM** | `No CUDA-capable device is detected` en el log del trabajo | Verificar que el nodo está configurado con GPUs en `slurm.conf` (`Gres=gpu:1`) y que `slurmd` tiene acceso a los dispositivos `/dev/nvidia*` |
 | **GROMACS lento en GPUs Blackwell (RTX 5000)** | Simulaciones 3–5× más lentas de lo esperado; advertencia `PTX JIT compilation` en el log | Agregar `nstlist = 40` al archivo MDP de producción; compilar GROMACS con `GMX_CUDA_TARGET_SM` que incluya `120` explícitamente. Ver memoria del proyecto: `project_dynamics_gpu.md` |
-| **`monitor_local.py not found`** | Error al iniciar el benchmark de docking | El archivo solo existía en `tests/dynamics/`; copiarlo a `tests/docking/` con `cp tests/dynamics/monitor_job.py tests/docking/` |
 | **`pdb_poses: "0\n0"` en `stats.json`** | JSON inválido en los resultados del benchmark | Causado por `set -euo pipefail` + `find \| wc -l` cuando el directorio no existe; siempre comprobar la existencia del directorio antes del pipe o usar el guard `[[ -d "$dir" ]] && ...` |
 | **Colisión de directorios de corrida multinodo** | Tres corridas comparten el mismo `run_<timestamp>` | Ocurre cuando varios procesos llaman a la función de generación de ID en el mismo segundo; agregar un `sleep 1` entre lanzamientos consecutivos o incluir un UUID en el ID |
 | **Matplotlib: `Image size ... too large`** | Error al generar figuras del reporte con barras de valor cero | Las anotaciones de texto con offset fijo quedan fuera del rango del eje cuando todos los valores son ≈0; usar `label_offset = ymax * 0.04` relativo y `ax.set_ylim(0, ymax * 1.25)` |
@@ -531,8 +619,8 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 | Recurso | Descripción |
 |---|---|
 | `README.md` | Instalación rápida y referencia de comandos principales |
-| `ARCHITECTURE.md` | Diagrama y descripción de la arquitectura en capas |
-| `Informe_Final_ChemLink.md` | Documento académico completo del proyecto con benchmarks y análisis |
+| `docs/Informe.md` | Documento académico completo del proyecto con benchmarks y análisis |
+| `docs/Instalación.md` | Guía de instalación y configuración del entorno desde cero |
 | `diseno/docking/README.md` | Diseño detallado del pipeline de docking |
 | `diseno/HPC/README.md` | Diseño de la infraestructura HPC y configuración del clúster |
 | `hpc/slurm/container/README.md` | Guía de uso de los scripts SLURM en modo contenedor |

@@ -104,17 +104,15 @@ Diseñar e implementar una plataforma de orquestación modular (ChemLink) que in
 
 ### Específicos
 
-- Configurar y administrar la infraestructura del clúster de cómputo en el laboratorio, estableciendo comunicación segura mediante SSH sin contraseña utilizando claves criptográficas, y unificando el almacenamiento a través de un sistema de archivos compartido bajo el protocolo NFS.
+- Diseñar e implementar la infraestructura del clúster de cómputo en el laboratorio, estableciendo comunicación segura mediante SSH sin contraseña utilizando claves criptográficas, y unificando el almacenamiento a través de un sistema de archivos compartido bajo el protocolo NFS.
 
-- Diseñar una arquitectura de software modular organizada en capas (CLI, Core, Adapters y Utils) que permita el desacoplamiento completo entre la lógica de negocio del orquestador y las herramientas científicas externas.
+- Diseñar e implementar una arquitectura de software modular organizada en capas (CLI, Core, Adapters y Utils) que permita el desacoplamiento completo entre la lógica de negocio del orquestador y las herramientas científicas externas.
 
 - Automatizar y paralelizar el pipeline completo de docking molecular, integrando la detección de cavidades con fpocket, la preparación de receptores y ligandos a formato PDBQT, la generación de mapas de afinidad con AutoGrid4, la ejecución en GPU mediante AutoDock-GPU y la consolidación de resultados.
 
 - Automatizar de forma homóloga los flujos de dinámica molecular, estructurando el proceso desde la preparación de topologías con ACPYPE hasta la producción, simulación de trayectorias y análisis de convergencia en GROMACS.
 
 - Implementar un sistema de ejecución de 1 a N nodos que soporte tanto multiprocesamiento local en CPU como la orquestación distribuida en diferentes nodos mediante la asignación dinámica de tareas con Job Arrays en el gestor de colas SLURM.
-
-- Desarrollar mecanismos de control y validación de recursos que evalúen el estado del clúster —disponibilidad de RAM, CPU y GPU— antes y durante la ejecución para prevenir la sobrecarga del hardware.
 
 - Garantizar la trazabilidad y reproducibilidad científica a través de la organización jerárquica de datos en el almacenamiento NAS y la generación automática de reportes analíticos estructurados en formatos CSV, JSON y Markdown.
 
@@ -188,14 +186,14 @@ La alternativa basada en scripts monolíticos o en wrappers rígidos sobre SLURM
 
 La alternativa modular en Python se ajusta al diseño del sistema. Cada herramienta externa está encapsulada en un adaptador, y cada etapa de docking o dinámica se modela como una clase con responsabilidades concretas. Esto permite que la orquestación central decida el orden de ejecución, que las etapas manejen sus errores con reportes propios y que el sistema pueda ampliarse con nuevos pasos sin romper el flujo existente. Bajo esa lógica, la plataforma Python no es una capa de presentación, sino el núcleo del orquestador científico.
 
-| Criterio | Enfoque monolítico en scripts | Enfoque modular adoptado |
-|---|---:|---:|
-| Manejo de errores | Bajo | Alto |
-| Reutilización de etapas | Bajo | Alto |
-| Trazabilidad de salidas | Baja | Alta |
-| Paralelización de CPU/GPU | Limitada | Integrada por etapa |
-| Extensibilidad | Baja | Alta |
-| Cohesión arquitectónica | Baja | Alta |
+| Criterio | Scripts monolíticos | Enfoque modular |
+|---|---|---|
+| Manejo de errores | **Bajo** — En un script Bash con `set -e`, el primer fallo aborta toda la cadena sin posibilidad de recuperación parcial | **Alto** — Captura excepciones por etapa, genera un reporte de error accionable y continúa con los elementos restantes sin interrumpir la campaña |
+| Reutilización de etapas | **Bajo** — Cambiar un parámetro obliga a reejecutar todo el proceso desde el inicio, sin posibilidad de retomar desde un punto intermedio | **Alto** — Cada paso puede invocarse de forma independiente consumiendo los artefactos ya producidos por etapas previas |
+| Trazabilidad de salidas | **Baja** — Los scripts producen salida plana en stdout, sin registro persistente de parámetros ni rutas de artefactos | **Alta** — Escribe un JSON estructurado por corrida con todos los parámetros, tiempos de ejecución y rutas de artefactos |
+| Paralelización de CPU/GPU | **Limitada** — Bash no gestiona pools de procesos ni asignación de GPU por tarea; la distribución de carga requiere intervención manual | **Integrada por etapa** — Cada paso implementa su propio pool de workers y asigna `CUDA_VISIBLE_DEVICES` por lote, sin cambiar la lógica del resto del pipeline |
+| Extensibilidad | **Baja** — Incorporar un nuevo motor de docking requiere modificar la lógica central del script, con riesgo de romper el flujo existente | **Alta** — Basta con escribir un nuevo adaptador que encapsule el binario, sin tocar los pipelines ni la CLI |
+| Cohesión arquitectónica | **Baja** — Los scripts mezclan preparación, ejecución y análisis en el mismo flujo lineal, dificultando el mantenimiento y la extensión | **Alta** — La separación en capas CLI / pipeline / adaptadores / almacenamiento delimita responsabilidades y evita que un cambio en una capa afecte a las demás |
 
 La decisión arquitectónica, por tanto, no solo privilegia el mantenimiento del código. También permite que el proyecto incorpore control de hardware, sharding, reintentos, generación de reportes y ejecución híbrida local/distribuida sin perder coherencia entre componentes.
 
@@ -215,9 +213,9 @@ El clúster se diseñó desde el principio con un criterio de escalabilidad hori
 
 **Monitoreo de hardware con Prometheus y Grafana.** Para mantener visibilidad operacional continua sobre la salud del clúster, se implementó una pila de monitoreo basada en Prometheus como sistema de recopilación de métricas y Grafana como plataforma de visualización. Los agentes de monitoreo instalados en cada nodo reportan métricas de utilización de CPU, consumo de memoria RAM, temperatura y carga de las GPUs, y estado de la red. Grafana consolida estas métricas en paneles de control que permiten detectar de forma proactiva condiciones de saturación de hardware, fallos de nodo o cuellos de botella antes de que afecten la ejecución de los experimentos.
 
-![Diagrama de infraestructura del clúster HPC](diagramas/Diagrama_infraestructura.png)
+![Diagrama de arquitectura de ChemLink](images/diagramas/diagrama-01-arquitectura-capas.png)
 
-**Diagrama 1.** Topología física del clúster HPC del laboratorio, mostrando la interconexión entre el nodo manager, los nodos workers, el NAS OpenMediaVault (NFS y SMB/CIFS/Samba), el switch de red y los servicios de monitoreo Prometheus/Grafana.
+**Diagrama 1.** Arquitectura en capas de ChemLink: interfaz CLI, pipelines de orquestación, pasos especializados, adaptadores de herramientas externas (MGLTools, fpocket, AutoGrid4, AutoDock-GPU, GROMACS) y capa de infraestructura HPC con SLURM y NFS.
 
 
 La arquitectura de ChemLink se organiza en dos planos complementarios. El primero es el plano de interacción y orquestación, que comienza en la interfaz de línea de comandos y termina en los resultados analíticos producidos por los pipelines. El segundo es el plano de ejecución científica, compuesto por las herramientas externas de docking y dinámica molecular, que se invocan a través de adaptadores y scripts SLURM.
@@ -246,10 +244,6 @@ Los **adaptadores de herramientas externas** encapsulan los binarios científico
 
 Las **utilidades de infraestructura** completan el sistema. El gestor de almacenamiento centraliza la creación de carpetas, la búsqueda de ficheros y la división de bibliotecas moleculares multimolécula; el módulo de reintentos implementa estrategias de reintento con retroceso exponencial y errores tipados; el módulo de progreso administra la visualización del avance en consola; y el detector de recursos del clúster permite inspeccionar CPU, RAM, GPU y red para decidir si conviene una ejecución multinodo o local.
 
-![Diagrama de arquitectura de ChemLink](diagramas/Diagrama%20de%20arquitectura.png)
-
-**Diagrama 2.** Arquitectura en capas de ChemLink: interfaz CLI, pipelines de orquestación, pasos especializados, adaptadores de herramientas externas (MGLTools, fpocket, AutoGrid4, AutoDock-GPU, GROMACS) y capa de infraestructura HPC con SLURM y NFS.
-
 ##### 7.2.2.2 Interacción entre módulos
 
 La interacción entre módulos es una cadena de validación y transformación, no una simple sucesión de llamadas. La CLI toma la intención del usuario y la traduce en parámetros; los pipelines resuelven qué etapas pueden ejecutarse; cada etapa crea o consume ficheros concretos; y los adaptadores invocan binarios externos con rutas, variables de entorno y parámetros ya normalizados.
@@ -260,9 +254,9 @@ En dinámica, la interacción está organizada por artefactos intermedios dentro
 
 El acoplamiento entre módulos es bajo en la lógica y medio en el sistema de archivos. Es bajo porque los adaptadores aíslan las herramientas externas; es medio porque la coherencia depende de rutas compartidas, nombres de archivo y directorios específicos. Esa dependencia es deliberada: el pipeline necesita un orden físico de artefactos para que cada etapa sea reproducible.
 
-![Diagrama de interacción entre módulos](diagramas/Diagrama%20de%20interaccion%20modulo.png)
+![Diagrama de interacción entre módulos](images/diagramas/diagrama-02-interaccion-modulos.png)
 
-**Diagrama 3.** Diagrama de interacción entre módulos de ChemLink: flujo de datos y control entre la CLI, los pipelines de docking y dinámica, los adaptadores y las herramientas científicas externas.
+**Diagrama 2.** Diagrama de interacción entre módulos de ChemLink: flujo de datos y control entre la CLI, los pipelines de docking y dinámica, los adaptadores y las herramientas científicas externas.
 
 ##### 7.2.2.3 Comportamiento
 
@@ -276,13 +270,17 @@ En dinámica molecular, el comportamiento depende del tipo de sistema y del hard
 
 El resultado final del flujo dinámico incluye estadísticas estructurales, paneles de control y reportes resumidos, además de análisis de energía de enlace cuando aplica. La arquitectura no solo ejecuta simulaciones: también transforma la salida bruta en evidencia analítica utilizable por el investigador.
 
-![Diagrama de secuencia — pipeline de docking](diagramas/Diagrama%20de%20secuencias.png)
+![Diagrama de secuencia — pipeline de docking](images/diagramas/diagrama-03-secuencia-docking.png)
 
-**Diagrama 4.** Diagrama de secuencia del pipeline completo de docking molecular, desde la recepción del comando en la CLI hasta la generación del reporte final de ranking de ligandos, incluyendo la coordinación con SLURM para el modo multinodo.
+**Diagrama 3.** Diagrama de secuencia del pipeline completo de docking molecular, desde la recepción del comando en la CLI hasta la generación del reporte final de ranking de ligandos, incluyendo la coordinación con SLURM para el modo multinodo.
 
-![Diagrama de secuencia — pipeline de dinámica molecular](diagramas/Diagrama_de_secuencia_dinamica.png)
+![Diagrama de secuencia — pipeline de dinámica molecular](images/diagramas/diagrama-04-secuencia-dinamica.png)
 
-**Diagrama 5.** Diagrama de secuencia del pipeline de dinámica molecular, ilustrando la cadena de pasos desde la preparación de topología (ACPYPE/GROMACS) hasta el postprocesamiento y el análisis estructural y energético de la trayectoria producida.
+**Diagrama 4.** Diagrama de secuencia del pipeline de dinámica molecular, ilustrando la cadena de pasos desde la preparación de topología (ACPYPE/GROMACS) hasta el postprocesamiento y el análisis estructural y energético de la trayectoria producida.
+
+![Diagrama de infraestructura del clúster HPC](images/diagramas/diagrama-05-infraestructura-cluster.png)
+
+**Diagrama 5.** Topología física del clúster HPC del laboratorio, mostrando la interconexión entre el nodo manager, los nodos workers, el NAS OpenMediaVault (NFS y SMB/CIFS/Samba), el switch de red y los servicios de monitoreo Prometheus/Grafana.
 
 ---
 
@@ -440,19 +438,19 @@ Durante las nueve pruebas de docking se recopiló datos de utilización de recur
 
 Los resultados de los benchmarks sistemáticos confirman que ChemLink cumple con los objetivos de eficiencia y reproducibilidad propuestos. La figura 1 presenta la comparación de duración entre los tres modos de ejecución para cada escala de biblioteca.
 
-![Figura 1. Comparación de duración por modo y escala de biblioteca](diagramas/fig1_duration_comparison.png)
+![Figura 1. Comparación de duración por modo y escala de biblioteca](images/figuras/fig01-duracion-modos-docking.png)
 
 **Figura 1.** Comparación de tiempos de ejecución del pipeline completo de docking en función de la escala de biblioteca (10, 100 y 1.000 ligandos) y el modo de ejecución: nodo único optimizado (24 workers), nodo único mínimo (1 worker) y multinodo SLURM (3 GPUs). Los valores están expresados en minutos.
 
 La figura 2 muestra el throughput (ligandos procesados por minuto) en función de la escala, revelando la capacidad de cada modo para escalar con el tamaño de la biblioteca.
 
-![Figura 2. Throughput por modo de ejecución](diagramas/fig2_throughput.png)
+![Figura 2. Throughput por modo de ejecución](images/figuras/fig02-throughput-modos.png)
 
 **Figura 2.** Throughput de docking en ligandos por minuto para cada modo de ejecución en función del tamaño de la biblioteca. El modo multinodo muestra el mayor throughput a escala de 1.000 ligandos (31,6 lig/min frente a 18,5 lig/min del modo optimizado).
 
 El análisis de speedup (figura 3) cuantifica la ganancia real del modo multinodo frente al modo nodo único optimizado:
 
-![Figura 3. Speedup multinodo vs nodo único](diagramas/fig3_speedup.png)
+![Figura 3. Speedup multinodo vs nodo único](images/figuras/fig03-speedup-multinodo.png)
 
 **Figura 3.** Factor de aceleración (*speedup*) del modo multinodo (3 GPUs) frente al modo nodo único optimizado. Para 100 ligandos se obtuvo un speedup de 2,2×; para 1.000 ligandos, de 1,71×. El decrecimiento relativo del speedup a mayor escala refleja la saturación del ancho de banda de red (1 Gbps) como cuello de botella en la transferencia de lotes desde el NAS.
 
@@ -474,19 +472,19 @@ Un hallazgo significativo fue la capacidad del sistema para detectar fallos en l
 
 Las figuras 12–16 muestran los perfiles temporales de utilización de CPU, GPU, memoria RAM, disco y red durante las pruebas de 1.000 ligandos en modo nodo único optimizado (azul) y nodo único mínimo (rojo). Estos perfiles fueron capturados por el monitor de recursos `monitor_local.py` a intervalos de 10 segundos.
 
-![Figura 4. Utilización de CPU durante docking](diagramas/fig12_resource_cpu.png)
+![Figura 4. Utilización de CPU durante docking](images/figuras/fig04-cpu-docking.png)
 
 **Figura 4.** Evolución temporal de la utilización de CPU (%) durante el pipeline completo de 1.000 ligandos. El modo optimizado (24 workers) muestra picos sostenidos durante la preparación de ligandos y el análisis de resultados, mientras el modo mínimo (1 worker) presenta una carga de CPU más uniforme y baja.
 
-![Figura 5. Utilización de GPU durante docking](diagramas/fig13_resource_gpu.png)
+![Figura 5. Utilización de GPU durante docking](images/figuras/fig05-gpu-docking.png)
 
 **Figura 5.** Utilización de GPU (%) durante la ejecución del pipeline de docking. La etapa de docking propiamente dicha produce los picos de mayor utilización de GPU en ambos modos. El perfil confirma que AutoDock-GPU mantiene alta utilización del acelerador durante la fase de búsqueda conformacional.
 
-![Figura 6. Utilización de memoria RAM durante docking](diagramas/fig14_resource_memory.png)
+![Figura 6. Utilización de memoria RAM durante docking](images/figuras/fig06-memoria-docking.png)
 
 **Figura 6.** Evolución del consumo de memoria RAM (%) a lo largo del pipeline. Los picos más altos corresponden a la fase de análisis, cuando el sistema carga en memoria simultáneamente las 1.000.000 de poses para calcular rankings y estadísticas descriptivas.
 
-![Figura 7. Desglose de tiempo por etapa del pipeline](diagramas/fig11_time_breakdown.png)
+![Figura 7. Desglose de tiempo por etapa del pipeline](images/figuras/fig07-desglose-etapas.png)
 
 **Figura 7.** Desglose del tiempo total de ejecución por etapa del pipeline para cada modo y escala de biblioteca. La figura permite identificar qué etapa domina el tiempo total en cada configuración: en el modo optimizado la fase de docking GPU concentra la mayor parte del tiempo de cómputo, mientras que en el modo mínimo la preparación secuencial de ligandos y el análisis tienen mayor peso relativo. En modo multinodo, la distribución en lotes paralelos reduce el tiempo de docking al principal determinante del wall-clock total.
 
@@ -494,11 +492,11 @@ Las figuras 12–16 muestran los perfiles temporales de utilización de CPU, GPU
 
 La figura 8 presenta la duración de cada tipo de simulación de dinámica molecular ejecutada sobre el clúster HPC, evidenciando la diferencia de complejidad computacional entre los seis tipos implementados.
 
-![Figura 8. Duración por tipo de dinámica molecular](diagramas/fig_01_duration.png)
+![Figura 8. Duración por tipo de dinámica molecular](images/figuras/fig08-duracion-dinamica.png)
 
 **Figura 8.** Tiempo de ejecución de cada tipo de simulación de dinámica molecular (1 ns de tiempo de simulación) sobre el nodo manager (RTX 5060 Ti, 8 cores). Los tipos que incluyen solo proteína o péptido (~15 min) son órdenes de magnitud más rápidos que los sistemas con dos proteínas o ácido nucleico (87–88 min), y ambos muy por debajo del sistema más complejo con dos proteínas y ligando (352 min).
 
-![Figura 9. Utilización de GPU durante dinámica molecular](diagramas/fig_03_gpu.png)
+![Figura 9. Utilización de GPU durante dinámica molecular](images/figuras/fig09-gpu-dinamica.png)
 
 **Figura 9.** Utilización de GPU durante las seis simulaciones de dinámica molecular. Se observa cómo sistemas más grandes (pligand, pacid, ppligand) mantienen la GPU en saturación durante períodos mucho más prolongados, mientras que sistemas pequeños (oprotein, ppeptide) presentan ráfagas cortas de actividad GPU intensiva.
 

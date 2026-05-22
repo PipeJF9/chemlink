@@ -1,5 +1,5 @@
 # 1. BASE Y VARIABLES DE ENTORNO (De tu archivo original)
-FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
+FROM nvidia/cuda:13.0.0-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NVIDIA_VISIBLE_DEVICES=all \
