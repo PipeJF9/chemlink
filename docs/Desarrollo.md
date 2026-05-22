@@ -69,9 +69,6 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 │   │   ├── ligands/
 │   │   └── dynamics/
 │   └── output/
-├── diseno/
-│   ├── docking/
-│   └── HPC/
 ├── docs/
 │   ├── Desarrollo.md         ← este documento
 │   ├── Informe.md
@@ -84,8 +81,8 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 │       ├── native/
 │       └── runner/
 ├── images/
-│   ├── diagramas/            ← diagramas de arquitectura (PNG)
-│   └── figuras/              ← gráficos de rendimiento (PNG)
+│   ├── diagrams/             ← architecture diagrams (PNG)
+│   └── figures/              ← performance charts (PNG)
 ├── pipelines/
 │   ├── docking/
 │   │   └── steps/
@@ -119,14 +116,13 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 | `cli/main.py` | Único punto de entrada de la CLI; define todos los subcomandos con `argparse` y coordina la construcción de configuraciones de ejecución |
 | `data/input/` | Datos de entrada del usuario: receptores PDB, biblioteca de ligandos SDF/PDBQT, complejos de dinámica molecular |
 | `data/output/` | Corridas generadas automáticamente con marca temporal (`run_<timestamp>_<uuid>/`) |
-| `diseno/` | READMEs de diseño del pipeline de docking y de la infraestructura HPC |
 | `docs/` | Documentación del proyecto: `Desarrollo.md`, `Informe.md`, `Instalación.md`, `index.html` |
 | `hpc/cluster/` | `resource_detector.py` (detecta CPU, RAM, GPU, red) y `network_detector.py` (inspecciona conectividad entre nodos) |
 | `hpc/slurm/native/` | Scripts SLURM para ejecución bare-metal sobre NFS; incluye variantes para cada etapa del pipeline y para dinámica molecular (`dynamics.slurm`, `dynamics_mpi.slurm`) |
 | `hpc/slurm/container/` | Scripts SLURM equivalentes para ejecución dentro del contenedor Docker |
 | `hpc/slurm/runner/dynamics_runner.py` | Orquestador Python que construye y envía la cadena de trabajos SLURM para dinámica multinodo |
-| `images/diagramas/` | Diagramas de arquitectura, secuencias e interacción de módulos (PNG) |
-| `images/figuras/` | Gráficos de rendimiento y utilización de recursos de los benchmarks (PNG) |
+| `images/diagrams/` | Architecture, sequence and module interaction diagrams (PNG) |
+| `images/figures/` | Performance and resource utilization charts from benchmarks (PNG) |
 | `pipelines/docking/steps/` | Un archivo por etapa: `receptor_preparation.py`, `ligand_preparation.py`, `active_site_detection.py`, `docking_execution.py`, `docking_analysis.py` |
 | `pipelines/dynamics/steps/` | Un archivo por etapa: `complex_builder.py`, `ligand_topology.py`, `topology.py`, `solvation.py`, `ions.py`, `energy_min.py`, `equilibration.py`, `production.py`, `post_processing.py`, `analysis.py` |
 | `pipelines/dynamics/gmx_optimizer.py` | Calcula los parámetros óptimos de `gmx mdrun` (threads, GPUs, PME) según el hardware detectado |
@@ -559,7 +555,6 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 - `docs/Desarrollo.md` (este documento): guía de desarrollo para futuros equipos; actualizar al incorporar nuevas herramientas, cambiar convenciones o identificar nuevos problemas frecuentes.
 - `docs/Informe.md`: documento académico completo del proyecto con benchmarks y análisis; no modificar como parte del flujo de desarrollo ordinario.
 - `docs/Instalación.md`: guía de instalación y configuración del entorno desde cero.
-- Los READMEs de `diseno/docking/` y `diseno/HPC/` documentan las decisiones de diseño de cada módulo; actualizar si se cambia la arquitectura de las etapas.
 
 ---
 
@@ -593,8 +588,7 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 1. **Implementar pytest** para los adaptadores con mocks de subprocess; es el paso más importante para reducir el tiempo de validación de cambios de horas a minutos.
 2. **Actualizar el módulo Lmod** si se cambia la estructura de directorios o los entornos Conda, ya que define las variables `PATH` y `PYTHONPATH` que todo el sistema usa.
 3. **No modificar los entornos Conda en los nodos directamente:** cualquier cambio en dependencias debe reflejarse en el `Dockerfile` (modo contenedor) y en el procedimiento de instalación del NFS (modo nativo), para que todos los nodos sean idénticos.
-4. **Documentar en `hpc/slurm/native/README.md`** cualquier nuevo script SLURM con sus variables de entorno requeridas; los scripts sin documentar son difíciles de mantener.
-5. **Antes de agregar soporte para una nueva GPU**, verificar que el `Dockerfile` incluye su arquitectura sm en `GMX_CUDA_TARGET_SM` y que AutoDock-GPU se compiló con el perfil PTX de fallback correspondiente.
+4. **Antes de agregar soporte para una nueva GPU**, verificar que el `Dockerfile` incluye su arquitectura sm en `GMX_CUDA_TARGET_SM` y que AutoDock-GPU se compiló con el perfil PTX de fallback correspondiente.
 
 ---
 
@@ -621,9 +615,6 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 | `README.md` | Instalación rápida y referencia de comandos principales |
 | `docs/Informe.md` | Documento académico completo del proyecto con benchmarks y análisis |
 | `docs/Instalación.md` | Guía de instalación y configuración del entorno desde cero |
-| `diseno/docking/README.md` | Diseño detallado del pipeline de docking |
-| `diseno/HPC/README.md` | Diseño de la infraestructura HPC y configuración del clúster |
-| `hpc/slurm/container/README.md` | Guía de uso de los scripts SLURM en modo contenedor |
 | [GROMACS 2025 — Manual de usuario](https://manual.gromacs.org/documentation/current/index.html) | Referencia oficial de parámetros MDP, flags de `mdrun` y configuración GPU |
 | [AutoDock-GPU — GitHub](https://github.com/ccsb-scripps/AutoDock-GPU) | Repositorio oficial con opciones de compilación y uso |
 | [fpocket — GitHub](https://github.com/Discngine/fpocket) | Repositorio oficial de fpocket con documentación de parámetros |
