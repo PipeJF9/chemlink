@@ -434,7 +434,89 @@ Durante las nueve pruebas de docking se recopiló datos de utilización de recur
 
 ## 11. Resultados y discusión
 
-### 11.1 Rendimiento del pipeline de docking molecular
+### 11.1 Comparativa cuantitativa respecto al flujo anterior de trabajo (SDASAM 3.0)
+
+#### 11.1.1 Descripción del sistema de referencia
+
+Previo a la existencia de ChemLink, el laboratorio Chemlab ejecutaba sus campañas de docking molecular mediante **SDASAM 3.0** (*Sistema de Docking Automatizado Semi-Asistido para Moléculas*, versión 3.0), una colección de scripts Bash encadenados (`PreparacionCompleta.sh`, `DeteccionSitiosUnion.sh`, `EjecutarDocking.sh`, `AnalisisResultadosCompleto.sh`) que se lanzaban de forma secuencial desde un script orquestador maestro. Aunque representó un avance respecto a la ejecución completamente manual, SDASAM 3.0 operaba en modo nodo único sin paralelismo explícito de ligandos, carecía de mecanismos de resiliencia ante fallos individuales y generaba un log de texto plano como único artefacto de trazabilidad.
+
+El 22 de mayo de 2026 se ejecutó una corrida de validación de SDASAM 3.0 sobre una biblioteca de **1 000 ligandos** con el mismo receptor utilizado en los benchmarks de ChemLink, produciendo el siguiente registro de tiempos:
+
+| Etapa | Inicio | Fin | Duración |
+|---|---|---|---|
+| Preparación completa de moléculas | 20:06:39 | 20:51:00 | **44 min 21 s** |
+| Detección de sitios de unión | 20:51:00 | 20:51:36 | **36 s** |
+| Ejecución de docking molecular | 20:51:36 | 21:48:36 | **57 min 00 s** |
+| Análisis completo de resultados | 21:48:36 | 22:04:13 | **15 min 37 s** |
+| **Total** | 20:06:39 | 22:04:13 | **1 h 57 min 34 s (117,6 min)** |
+
+#### 11.1.2 Comparación de tiempos por etapa
+
+La figura 10 presenta la comparación directa del tiempo invertido en cada etapa del pipeline para SDASAM 3.0, ChemLink en modo nodo único optimizado (24 workers) y ChemLink en modo multinodo con 3 GPUs SLURM, todos sobre la misma escala de 1 000 ligandos.
+
+![Figura 10. Comparación de tiempos por etapa — SDASAM 3.0 vs ChemLink](../images/figures/fig10-comparacion-fases-sdasam.png)
+
+**Figura 10.** Desglose del tiempo total de ejecución por etapa del pipeline de docking para SDASAM 3.0, ChemLink nodo único (24 workers) y ChemLink multinodo (3 nodos SLURM), sobre una biblioteca de 1 000 ligandos. Los valores sobre cada barra corresponden a la duración en minutos de cada fase; los totales se indican en la cima de cada columna.
+
+Los datos evidencian que la **preparación de moléculas** es la etapa donde se concentra la mayor diferencia absoluta: SDASAM 3.0 invierte 44,4 minutos en un proceso serial de conversión de formatos, mientras que ChemLink paraleliza la misma tarea con un pool de 24 workers, reduciéndola a aproximadamente 7 minutos (–84,2 %). La etapa de **análisis de resultados** pasa de 15,6 minutos —donde SDASAM 3.0 ejecuta scripts de análisis en secuencia— a 3 minutos en ChemLink gracias a la consolidación automatizada de poses (–80,8 %). La fase de **docking GPU** también mejora, de 57,0 a ~43 minutos (–24,6 %), por la configuración optimizada de AutoDock-GPU que ChemLink aplica automáticamente según la arquitectura detectada.
+
+#### 11.1.3 Reducción porcentual por dimensión de rendimiento
+
+La figura 11 cuantifica las mejoras de ChemLink respecto a SDASAM 3.0 en las dimensiones de tiempo y throughput más relevantes.
+
+![Figura 11. Mejoras porcentuales de ChemLink respecto a SDASAM 3.0](../images/figures/fig11-mejoras-porcentuales-sdasam.png)
+
+**Figura 11.** Porcentaje de mejora de ChemLink (nodo único y multinodo) frente a SDASAM 3.0 en tiempo total de ejecución, tiempo de preparación, tiempo de análisis y throughput (ligandos por minuto), para una biblioteca de 1 000 ligandos.
+
+Los indicadores más destacados son:
+
+| Métrica | SDASAM 3.0 | ChemLink 1 nodo | ChemLink 3 nodos | Mejora (3 nodos) |
+|---|---|---|---|---|
+| Tiempo total | 117,6 min | 54,0 min | 31,6 min | **–73,1 %** |
+| Preparación de moléculas | 44,4 min | 7,0 min | 5,0 min | **–88,7 %** |
+| Análisis de resultados | 15,6 min | 3,0 min | 2,0 min | **–87,2 %** |
+| Docking GPU | 57,0 min | 43,0 min | 24,0 min | **–57,9 %** |
+| Throughput (lig/min) | 8,5 | 18,5 | 31,6 | **+272 %** |
+
+La reducción del tiempo total en modo multinodo (–73,1 %) proviene de la combinación de tres factores independientes: paralelización de la preparación (24 workers), optimización automática de la configuración GPU en el motor de docking, y distribución del lote de ligandos entre tres nodos mediante SLURM Job Arrays. Ninguno de esos factores requirió hardware adicional respecto al que ya operaba SDASAM 3.0; la ganancia es íntegramente de software y orquestación.
+
+#### 11.1.4 Nuevas capacidades respecto a SDASAM 3.0
+
+La figura 12 compara de forma sistemática las capacidades funcionales de ambos sistemas.
+
+![Figura 12. Capacidades comparativas — SDASAM 3.0 vs ChemLink](../images/figures/fig12-capacidades-comparativas.png)
+
+**Figura 12.** Matriz de capacidades comparativas entre SDASAM 3.0 y ChemLink. Verde (✓) indica capacidad completamente implementada; naranja (~) indica soporte parcial; rojo (✗) indica ausencia de la capacidad.
+
+Más allá de los números de rendimiento, ChemLink incorpora **diez capacidades estructurales** que SDASAM 3.0 no tenía:
+
+1. **Resiliencia ante fallos individuales.** SDASAM 3.0 utilizaba `set -e` en sus scripts Bash: el fallo de un único ligando detenía la campaña completa y perdía el trabajo ya completado. ChemLink registra el fallo, lo incluye en el reporte final y continúa con los ligandos restantes. En la validación de 1 000 ligandos en modo mínimo, dos compuestos con geometría anómala fueron descartados de forma trazable sin interrumpir los 998 restantes.
+
+2. **Distribución multinodo mediante SLURM Job Arrays.** SDASAM 3.0 no disponía de mecanismo alguno para distribuir el trabajo entre nodos del clúster. ChemLink genera y envía automáticamente Job Arrays parametrizados, particionando la biblioteca de ligandos por nodo de cómputo.
+
+3. **Trazabilidad completa de la ejecución.** Cada corrida de ChemLink genera un directorio con marca temporal e identificador único que preserva todos los parámetros, artefactos intermedios y logs estructurados. SDASAM 3.0 producía un único archivo de log de texto plano sin estructura que se sobreescribía en cada ejecución si no se renombraba manualmente.
+
+4. **Registro de parámetros en `stats.json`.** ChemLink serializa en disco la configuración exacta de cada ejecución (versiones de herramientas, rutas, flags de GPU, número de workers), garantizando que cualquier experimento sea reproducible de forma exacta por cualquier miembro del laboratorio.
+
+5. **Entornos Conda versionados.** ChemLink opera sobre entornos Conda con versiones de dependencias fijadas (`bio` y `mgl_legacy`), eliminando la variabilidad de software entre nodos o entre ejecuciones en diferentes fechas. SDASAM 3.0 dependía del entorno Python del sistema operativo, que variaba entre nodos.
+
+6. **Soporte Docker / contenedor.** ChemLink incluye un Dockerfile que construye una imagen reproducible con todas las herramientas científicas compiladas. SDASAM 3.0 no tenía soporte de contenedorización.
+
+7. **Monitoreo de recursos con Prometheus y Grafana.** El clúster HPC sobre el que opera ChemLink dispone de monitoreo continuo de CPU, GPU, memoria y red en todos los nodos. SDASAM 3.0 no integraba ningún mecanismo de observabilidad del hardware.
+
+8. **CLI unificada con diagnóstico de entorno.** `chemlink doctor` verifica antes de cualquier ejecución que todas las dependencias, GPUs y rutas están correctamente configuradas. Con SDASAM 3.0, la detección de problemas de entorno era manual e implícita en el primer error de ejecución.
+
+9. **Paralelismo explícito de 24 workers en preparación.** La preparación de ligandos en ChemLink utiliza un pool de procesos con hasta 24 workers simultáneos. SDASAM 3.0 procesaba los ligandos de forma completamente serial en `PreparacionCompleta.sh`.
+
+10. **Análisis automatizado con ranking estructurado.** El módulo de análisis de ChemLink consolida poses, calcula estadísticas descriptivas completas, exporta rankings en CSV y genera candidatos para dinámica molecular en un único paso integrado. El script `AnalisisResultadosCompleto.sh` de SDASAM 3.0 producía archivos de texto sin estructura relacional ni exportación tabular automática.
+
+#### 11.1.5 Síntesis cuantitativa
+
+La comparación directa con SDASAM 3.0 sobre la misma carga de trabajo de 1 000 ligandos demuestra que ChemLink reduce el tiempo total de campaña en un **54,1 % en nodo único** y un **73,1 % en modo multinodo**, con una reducción del tiempo de preparación del **88,7 %** y un incremento del throughput del **272 %** con tres nodos. Estas mejoras se obtienen exclusivamente de la capa de orquestación —paralelismo, configuración automática y distribución SLURM— sin modificar los motores científicos subyacentes (AutoDock-GPU, fpocket, AutoGrid4), que son los mismos en ambos sistemas. La diferencia no es de hardware ni de algoritmos: es de integración.
+
+
+
+### 11.2 Rendimiento del pipeline de docking molecular
 
 Los resultados de los benchmarks sistemáticos confirman que ChemLink cumple con los objetivos de eficiencia y reproducibilidad propuestos. La figura 1 presenta la comparación de duración entre los tres modos de ejecución para cada escala de biblioteca.
 
@@ -468,7 +550,7 @@ La tabla siguiente resume los indicadores clave de rendimiento para el pipeline 
 
 Un hallazgo significativo fue la capacidad del sistema para detectar fallos en ligandos individuales sin detener la ejecución global. En el modo mínimo con 1.000 ligandos, dos ligandos con geometría anómala no pudieron ser procesados por AutoDock-GPU; el sistema registró el error en el log, continuó con los 998 restantes y los incorporó como entradas en el reporte de fallos al finalizar. Antes de ChemLink, el fallo de un solo ligando en un script de Bash solía interrumpir toda la cadena de cálculo; la resiliencia por diseño convierte la tasa de fallo en un dato trazable en lugar de un evento catastrófico.
 
-### 11.2 Utilización de recursos del clúster durante docking
+### 11.3 Utilización de recursos del clúster durante docking
 
 Las figuras 12–16 muestran los perfiles temporales de utilización de CPU, GPU, memoria RAM, disco y red durante las pruebas de 1.000 ligandos en modo nodo único optimizado (azul) y nodo único mínimo (rojo). Estos perfiles fueron capturados por el monitor de recursos `monitor_local.py` a intervalos de 10 segundos.
 
@@ -488,7 +570,7 @@ Las figuras 12–16 muestran los perfiles temporales de utilización de CPU, GPU
 
 **Figura 7.** Desglose del tiempo total de ejecución por etapa del pipeline para cada modo y escala de biblioteca. La figura permite identificar qué etapa domina el tiempo total en cada configuración: en el modo optimizado la fase de docking GPU concentra la mayor parte del tiempo de cómputo, mientras que en el modo mínimo la preparación secuencial de ligandos y el análisis tienen mayor peso relativo. En modo multinodo, la distribución en lotes paralelos reduce el tiempo de docking al principal determinante del wall-clock total.
 
-### 11.3 Rendimiento del pipeline de dinámica molecular
+### 11.4 Rendimiento del pipeline de dinámica molecular
 
 La figura 8 presenta la duración de cada tipo de simulación de dinámica molecular ejecutada sobre el clúster HPC, evidenciando la diferencia de complejidad computacional entre los seis tipos implementados.
 
@@ -502,7 +584,7 @@ La figura 8 presenta la duración de cada tipo de simulación de dinámica molec
 
 La tabla de tiempos de la sección 10.2 confirma que cinco de los seis tipos de dinámica se ejecutaron exitosamente. El tipo pprotein (proteína + proteína) excedió el límite de cuatro horas de la partición de prueba, lo que no constituye un fallo del sistema sino una restricción del entorno de validación. Con la ampliación del límite a ocho horas (configuración utilizada para ppligand), todos los tipos son ejecutables en el hardware disponible.
 
-### 11.4 Impacto operacional y reproducibilidad
+### 11.5 Impacto operacional y reproducibilidad
 
 La estandarización de los procesos de preparación de datos asegura que los resultados producidos por diferentes miembros del laboratorio sean directamente comparables, facilitando la colaboración académica y el control de calidad en publicaciones científicas [4]. Cada experimento genera un directorio de corrida con marca temporal e identificador único que conserva todos los parámetros, artefactos intermedios y resultados, garantizando la reproducibilidad completa de la ejecución.
 
@@ -510,21 +592,21 @@ La automatización del envío de trabajos a SLURM permitió una utilización de 
 
 La integración futura de módulos de rescoring asistido por inteligencia artificial, análisis de energía de unión mediante MM-GBSA y detección de conformaciones relevantes mediante clustering sobre trayectorias de dinámica ampliarán la capacidad analítica del sistema sin modificar la arquitectura base, confirmando la solidez del diseño modular adoptado para convertir al laboratorio Chemlab en un entorno de cómputo científico plenamente orquestado.
 
-### 11.5 Discusión
+### 11.6 Discusión
 
-#### 11.5.1 El problema era de orquestación, no de herramientas
+#### 11.6.1 El problema era de orquestación, no de herramientas
 
 El hallazgo más importante de este proyecto no es un número de rendimiento sino una confirmación arquitectónica: el cuello de botella del laboratorio nunca fue la calidad de los motores científicos disponibles —AutoDock-GPU, GROMACS y fpocket son herramientas de referencia a nivel internacional—, sino la ausencia de la capa que los articulara. La decisión de diseño de construir un orquestador especializado en lugar de un nuevo motor de cálculo fue correcta, y los resultados lo prueban cuantitativamente.
 
 En docking, la tasa de éxito del 100% en modo optimizado no es trivial: significa que el sistema coordinó correctamente la preparación de 1.000 estructuras moleculares individuales con diferentes características estereoquímicas, la generación y reutilización de mapas de afinidad, la distribución de trabajo entre procesos paralelos y la consolidación de un millón de poses conformacionales en un reporte estructurado, todo sin intervención manual. Cada uno de esos pasos era anteriormente una fuente de error humano; ahora es una operación determinista y trazable. La reducción del tiempo de preparación y lanzamiento de un experimento de 45 minutos a menos de 5 minutos no mide la velocidad del cálculo —que no cambia— sino el coste cognitivo y operativo que antes pagaba el investigador para poner en marcha cada campaña.
 
-#### 11.5.2 El speedup sublineal como hallazgo de infraestructura
+#### 11.6.2 El speedup sublineal como hallazgo de infraestructura
 
 El análisis del speedup multinodo es el resultado más técnicamente revelador de la validación. Con tres GPUs se obtuvo un factor de aceleración de 2,2× para 100 ligandos y de 1,71× para 1.000 ligandos. En términos ideales, tres aceleradores paralelos deberían producir un speedup de 3×; la desviación respecto a ese ideal no es un defecto de la plataforma sino una manifestación directa de la Ley de Amdahl aplicada a la infraestructura de red.
 
 El componente serial del flujo multinodo es la transferencia de datos entre el NAS y los nodos de cómputo. Con un enlace de 1 Gbps, el tiempo de transferencia de los lotes de ligandos y sus mapas de afinidad representa una fracción creciente del tiempo total a medida que aumenta el número de ligandos procesados en paralelo: a mayor paralelismo, mayor contención sobre el mismo canal de red. Este efecto explica por qué el speedup es mayor para 100 ligandos (lotes más pequeños, menos transferencia relativa) que para 1.000 (lotes más grandes, mayor presión sobre el enlace). La Ley de Amdahl predice que si la fracción serial de tiempo de red se reduce de aproximadamente el 30% actual al 10% que permitiría un enlace de 10 Gbps, el speedup esperado con tres GPUs escalaría a 2,5–2,8×. Esta proyección convierte el speedup medido en una recomendación de infraestructura cuantificada: la inversión con mayor impacto en el rendimiento del clúster no es añadir más GPUs sino elevar el ancho de banda de red a 10 Gbps.
 
-#### 11.5.3 La asimetría computacional entre docking y dinámica molecular
+#### 11.6.3 La asimetría computacional entre docking y dinámica molecular
 
 Los dos pipelines de ChemLink exhiben naturalezas computacionales fundamentalmente diferentes, y esa asimetría tiene consecuencias directas sobre la arquitectura y las estrategias de paralelización adoptadas.
 
@@ -532,25 +614,25 @@ El docking es un problema *embarrassingly parallel*: cada par proteína-ligando 
 
 La dinámica molecular, en contraste, es intrínsecamente secuencial dentro de cada simulación: cada fase —minimización, equilibrado NVT, equilibrado NPT, producción— depende de los artefactos que produce la fase anterior. No es posible ejecutar la producción antes de que el equilibrado haya convergido, porque el estado termodinámico del sistema no es válido. Esto impone un límite fundamental a la paralelización intra-simulación y explica la escalabilidad no lineal observada en los tiempos de dinámica: el sistema ppligand (dos proteínas más un ligando) no es solo dos veces más costoso que pligand (una proteína y un ligando), sino aproximadamente 23 veces más lento. Esta escala superlineal refleja la dependencia cuadrática del número de interacciones intermoleculares con el tamaño del sistema en el cálculo de la función de potencial de campo de fuerzas. Esta observación valida la necesidad de HPC para cualquier campaña de dinámica molecular a escala de laboratorio y confirma que el diseño secuencial-por-fases de ChemLink es el correcto para este dominio.
 
-#### 11.5.4 Resiliencia por diseño como valor operacional diferencial
+#### 11.6.4 Resiliencia por diseño como valor operacional diferencial
 
 La gestión de fallos en ChemLink no es un mecanismo de recuperación de emergencia sino una propiedad estructural del diseño. En el modo mínimo con 1.000 ligandos, dos compuestos con geometría anómala provocaron errores en AutoDock-GPU; el sistema registró el incidente, descartó esos dos ligandos de forma trazable y completó el 99,8% restante sin ninguna intervención. El reporte final incluyó el listado de fallos con los identificadores de cada compuesto y el mensaje de error asociado.
 
 Este comportamiento contrasta radicalmente con la práctica anterior basada en scripts de Bash con `set -e`, donde el fallo de un único ligando provocaba la terminación abrupta de toda la cadena y la pérdida del trabajo ya completado. La diferencia no es solo operativa: tiene consecuencias científicas. Un experimento con 998/1.000 resultados trazados y 2 fallos documentados es científicamente utilizable; un experimento detenido en el ligando 237 no lo es. La resiliencia por diseño transforma la tasa de fallo de un evento catastrófico en un dato estadístico de calidad de la biblioteca molecular.
 
-#### 11.5.5 Reproducibilidad como prerrequisito de la validez científica
+#### 11.6.5 Reproducibilidad como prerrequisito de la validez científica
 
 Cada ejecución de ChemLink genera un directorio de corrida con marca temporal única que preserva en disco la versión exacta de los parámetros, los artefactos intermedios de cada etapa, los logs estructurados por paso y el reporte de resultados. Esta arquitectura de trazabilidad no es un detalle de implementación sino un requisito epistemológico: un resultado computacional que no puede reproducirse exactamente no es un resultado científico, es un artefacto de ejecución.
 
 La reproducibilidad se ve amenazada por tres fuentes habituales en química computacional: variabilidad del entorno de software (versiones de herramientas), variabilidad de la configuración (parámetros de ejecución no registrados) y variabilidad del estado del sistema (archivos intermedios sobreescritos). ChemLink mitiga las tres: los entornos Conda con versiones fijas eliminan la variabilidad de software; el registro en `stats.json` de todos los parámetros de ejecución con su valor exacto elimina la variabilidad de configuración; y los directorios con marca temporal eliminan la sobreescritura. El resultado es que cualquier experimento registrado en el sistema puede ser replicado por cualquier investigador del laboratorio con el mismo comando y producirá resultados estadísticamente equivalentes, lo que es el estándar mínimo exigido por la reproducibilidad computacional moderna.
 
-#### 11.5.6 Validación del patrón de orquestación modular en entornos HPC académicos
+#### 11.6.6 Validación del patrón de orquestación modular en entornos HPC académicos
 
 La pregunta de diseño central que motivó la arquitectura en capas de ChemLink —¿es correcto separar la lógica de negocio del orquestador de los adaptadores de herramientas externas?— recibe una respuesta afirmativa a través de los resultados. Durante el desarrollo se sustituyeron versiones de AutoDock-GPU, se ajustaron los flags de GROMACS para la arquitectura Blackwell (sm_120, descrita en la sección §2.2) y se incorporó el modo multinodo sin modificar la lógica de los pipelines ni la interfaz de la CLI. Cada cambio se contuvo dentro del adaptador correspondiente, validando que el acoplamiento bajo entre capas no es solo un principio de diseño sino una característica operacionalmente demostrada.
 
 Esta modularidad tiene un valor estratégico en contextos académicos donde el hardware evoluciona con mayor rapidez que el software científico. Un laboratorio que adquiera nuevas GPUs, adopte una versión mayor de GROMACS o incorpore un nuevo motor de docking alternativo puede integrarlo en ChemLink escribiendo o actualizando un adaptador, sin tocar los pipelines de orquestación ni la CLI. Este modelo de extensibilidad aislada es el factor determinante para la sostenibilidad a largo plazo de una plataforma de software científico en un entorno con recursos limitados de desarrollo.
 
-#### 11.5.7 Limitaciones identificadas y líneas de trabajo futuro
+#### 11.6.7 Limitaciones identificadas y líneas de trabajo futuro
 
 Los resultados también exponen con claridad las limitaciones actuales de la plataforma y las inversiones que maximizarían su impacto:
 
@@ -564,13 +646,15 @@ Los resultados también exponen con claridad las limitaciones actuales de la pla
 
 **Interfaz de usuario.** La CLI es la herramienta correcta para investigadores con formación técnica, pero excluye a usuarios sin experiencia en línea de comandos. Una interfaz web ligera o un cuaderno Jupyter que exponga los comandos principales de ChemLink ampliaría el acceso del sistema a estudiantes de pregrado y personal de laboratorio sin formación en HPC.
 
-#### 11.5.8 Conclusiones
+#### 11.6.8 Conclusiones
 
 ChemLink demuestra que la brecha operativa entre capacidad de cómputo disponible y utilización efectiva en laboratorios académicos no es un problema de hardware ni de software científico, sino de integración. La plataforma convierte el laboratorio Chemlab de un entorno donde la capacidad computacional estaba limitada por la sobrecarga administrativa del investigador en uno donde está limitada únicamente por el hardware —que es el régimen operativo correcto para un clúster HPC.
 
 Los benchmarks cuantifican cuatro contribuciones concretas e independientes entre sí: la eliminación del tiempo de setup experimental (de 45 a menos de 5 minutos), la paralelización efectiva de campañas de docking sobre múltiples GPUs (speedup de hasta 2,2×), la ejecución autónoma y resiliente de seis tipos de dinámica molecular con recuperación ante fallos parciales, y la generación automática de evidencia reproducible y trazable para cada experimento. Ninguna de estas contribuciones requiere más hardware del que ya existía en el laboratorio; todas emergen exclusivamente de la capa de orquestación.
 
 El diseño modular adoptado no solo fue el correcto para los requerimientos actuales, sino que define un modelo de extensibilidad probado: nuevos motores científicos, nuevos tipos de simulación y nuevas estrategias de análisis pueden incorporarse como adaptadores sin modificar la lógica central. Esa propiedad transforma a ChemLink de una solución puntual al problema identificado en 2025 en una infraestructura de software con capacidad de evolución orgánica a medida que el campo de la química computacional y el hardware del laboratorio continúen desarrollándose.
+
+---
 
 ---
 
