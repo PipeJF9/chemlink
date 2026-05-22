@@ -267,14 +267,29 @@
     .d-ul { font-size: .88rem; line-height: 1.75; color: var(--white-2); padding-left: 1.15rem; margin-bottom: .9rem; }
     pre {
       font-family: var(--mono); font-size: .79rem; line-height: 1.65;
-      background: rgba(255,255,255,.04);
+      background: rgba(2, 5, 22, 0.78);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-      border: 1px solid var(--g-border);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
-      border-radius: var(--r); padding: .95rem 1.2rem; overflow-x: auto; margin: .45rem 0 1.2rem; position: relative;
+      border: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 4px 24px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.04);
+      border-radius: var(--r); padding: 2.1rem 1.2rem .95rem; overflow-x: auto; margin: .45rem 0 1.2rem; position: relative;
     }
-    .lang { position: absolute; top: .45rem; right: .7rem; font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; color: var(--white-4); }
+    .lang { position: absolute; top: .52rem; left: .85rem; font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.35); }
+    .copy-btn {
+      position: absolute; top: .38rem; right: .55rem;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 4px;
+      color: rgba(255,255,255,.45);
+      font-size: .62rem; letter-spacing: .06em; text-transform: uppercase;
+      font-family: var(--mono);
+      padding: .18rem .52rem;
+      cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+      line-height: 1.4;
+    }
+    .copy-btn:hover { background: rgba(18,216,180,.14); border-color: rgba(18,216,180,.35); color: var(--teal); }
+    .copy-btn.copied { background: rgba(18,216,180,.14); border-color: rgba(18,216,180,.35); color: var(--teal); }
     code { font-family: var(--mono); font-size: .79rem; color: var(--white-2); }
     p code, li code { background: rgba(255,255,255,.07); border: 1px solid var(--g-border); padding: .09em .32em; border-radius: 3px; font-size: .77rem; color: var(--teal); }
     .kw  { color: #60a5fa; }
@@ -854,6 +869,23 @@ chemlink docking \
         });
       });
     }, { threshold: 0.25 }).observe(s);
+  });
+
+  /* ── COPY BUTTONS ── */
+  document.querySelectorAll('pre').forEach(pre => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code');
+      const text = (code ? code : pre).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '✓ copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+      });
+    });
+    pre.appendChild(btn);
   });
 
   /* ── MESH GRADIENT CANVAS ── */
