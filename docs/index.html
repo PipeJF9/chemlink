@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chemlink — Distributed Molecular Modeling CLI</title>
+  <style>
+    :root {
+      /* ── palette from banner ── */
+      --bg:        #141e5c;   /* deep navy */
+      --bg-2:      #1a2a7a;   /* slightly lighter navy */
+      --bg-3:      #1f3494;   /* card/surface navy */
+      --bg-card:   rgba(255,255,255,.1);
+      --teal:      #12d8b4;   /* bright teal accent */
+      --teal-dim:  rgba(18,216,180,.18);
+      --teal-dim2: rgba(18,216,180,.08);
+      --purple:    #9b5de5;   /* purple accent */
+      --white:     #ffffff;
+      --white-2:   rgba(255,255,255,.92);
+      --white-3:   rgba(255,255,255,.65);
+      --white-4:   rgba(255,255,255,.35);
+      --rule:      rgba(255,255,255,.2);
+      --rule-2:    rgba(255,255,255,.1);
+      --ok:        #12d8b4;
+      --ok-bg:     rgba(18,216,180,.12);
+      --warn:      #fbbf24;
+      --warn-bg:   rgba(251,191,36,.1);
+      --info:      #60a5fa;
+      --info-bg:   rgba(96,165,250,.1);
+      --font: Helvetica Neue, Helvetica, Arial, sans-serif;
+      --mono: "Courier New", Courier, monospace;
+      --max: 1080px;
+      --r: 5px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      color: var(--white);
+      background: #0f1650;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #0f1650; }
+    ::-webkit-scrollbar-thumb { background: var(--white-4); border-radius: 3px; }
+    a { color: var(--teal); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── MESH GRADIENT CANVAS ───────── */
+    #bg-canvas {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0; pointer-events: none;
+    }
+    nav, section, footer, .stats-strip { position: relative; z-index: 1; }
+
+    /* ── NAV ─────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: 58px;
+      background: rgba(20,30,92,.92);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--rule);
+      display: flex; align-items: center; padding: 0 2.5rem; gap: 2rem;
+    }
+    .nav-logo { display: flex; align-items: center; gap: .55rem; flex-shrink: 0; text-decoration: none; }
+    .nav-logo img { height: 26px; }
+    .nav-logo span { font-size: .92rem; font-weight: 500; letter-spacing: .06em; color: var(--white); }
+    .nav-links { display: flex; gap: .1rem; margin-left: auto; }
+    .nav-links a {
+      font-size: .82rem; color: var(--white-2);
+      padding: .32rem .7rem; border-radius: var(--r);
+      transition: background .15s, color .15s;
+    }
+    .nav-links a:hover { background: var(--rule); color: var(--white); text-decoration: none; }
+    .nav-links a.active { color: var(--white); font-weight: 500; }
+    .nav-cta {
+      font-size: .82rem; font-weight: 500; padding: .38rem 1rem;
+      background: var(--teal); color: var(--bg);
+      border-radius: var(--r); transition: opacity .15s; white-space: nowrap;
+    }
+    .nav-cta:hover { opacity: .88; text-decoration: none; }
+
+    /* ── LAYOUT ──────────────────────── */
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 2rem; }
+    section { padding: 5rem 0; }
+    section + section { border-top: 1px solid var(--rule); }
+
+    /* ── HERO ────────────────────────── */
+    #home {
+      padding-top: calc(58px + 5rem);
+      min-height: 88vh;
+      display: flex; align-items: center;
+      border-bottom: 1px solid var(--rule);
+      position: relative; overflow: hidden;
+    }
+
+    .hero-grid { display: grid; grid-template-columns: 1fr 340px; gap: 4rem; align-items: center; position: relative; z-index: 1; }
+    .hero-tag {
+      display: inline-flex; align-items: center; gap: .45rem;
+      font-size: .73rem; letter-spacing: .07em; color: var(--white-2);
+      border: 1px solid var(--rule); padding: .28rem .75rem; border-radius: 100px; margin-bottom: 1.4rem;
+    }
+    .tag-dot { width: 6px; height: 6px; background: var(--teal); border-radius: 50%; flex-shrink: 0; }
+    h1 { font-size: clamp(2.2rem, 4.5vw, 3.5rem); font-weight: 300; line-height: 1.1; letter-spacing: -.025em; margin-bottom: 1.2rem; color: var(--white); }
+    h1 strong { font-weight: 700; }
+    .hero-sub { font-size: 1rem; line-height: 1.75; color: var(--white-2); max-width: 500px; margin-bottom: 2rem; }
+    .btn-row { display: flex; gap: .65rem; flex-wrap: wrap; }
+    .btn { display: inline-block; font-family: var(--font); font-size: .83rem; font-weight: 500; padding: .58rem 1.35rem; border-radius: var(--r); transition: all .15s; cursor: pointer; }
+    .btn-teal { background: var(--teal); color: var(--bg); border: 1px solid var(--teal); }
+    .btn-teal:hover { opacity: .88; text-decoration: none; }
+    .btn-ghost { background: transparent; color: var(--white); border: 1px solid var(--white-4); }
+    .btn-ghost:hover { border-color: var(--white-3); background: var(--rule); text-decoration: none; }
+    .hero-panel {
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center; padding: 3rem;
+      backdrop-filter: blur(8px);
+    }
+    .hero-panel img { width: 130px; }
+
+    /* ── STATS ───────────────────────── */
+    .stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+    .stat-item { padding: 1.4rem 2rem; border-right: 1px solid var(--rule); }
+    .stat-item:last-child { border-right: none; }
+    .stat-num { font-size: 1.55rem; font-weight: 300; letter-spacing: -.02em; margin-bottom: .2rem; color: var(--teal); }
+    .stat-label { font-size: .7rem; letter-spacing: .07em; color: var(--white-2); text-transform: uppercase; }
+
+    /* ── SECTION HEADER ──────────────── */
+    .eyebrow { font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--teal); margin-bottom: .65rem; }
+    .s-title { font-size: clamp(1.45rem, 2.5vw, 1.9rem); font-weight: 300; letter-spacing: -.02em; line-height: 1.2; margin-bottom: .9rem; }
+    .s-title strong { font-weight: 600; }
+    .s-body { font-size: .93rem; line-height: 1.75; color: var(--white-2); max-width: 560px; margin-bottom: 2.5rem; }
+
+    /* ── STATUS GRID ─────────────────── */
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 1px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--rule); }
+    .sc { background: var(--bg-card); padding: 1.2rem 1.4rem; backdrop-filter: blur(4px); }
+    .sc-lbl { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--white-2); margin-bottom: .35rem; }
+    .sc-val { font-size: .92rem; font-weight: 500; }
+    .ok   { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .info { color: var(--info); }
+
+    /* ── WHY GRID ────────────────────── */
+    .why-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 1px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--rule); }
+    .why-card { background: var(--bg-card); padding: 1.7rem; transition: background .15s; }
+    .why-card:hover { background: rgba(255,255,255,.16); }
+    .why-num { font-size: .7rem; letter-spacing: .07em; color: var(--white-3); margin-bottom: .85rem; }
+    .why-card h3 { font-size: .88rem; font-weight: 600; margin-bottom: .55rem; color: var(--white); }
+    .why-card p { font-size: .86rem; line-height: 1.7; color: var(--white-2); }
+
+    /* ── RELEASES ────────────────────── */
+    .release-list { display: flex; flex-direction: column; }
+    .release-item { display: grid; grid-template-columns: 115px 1fr; gap: 2rem; padding: 1.4rem 0; border-bottom: 1px solid var(--rule); }
+    .release-item:first-child { border-top: 1px solid var(--rule); }
+    .release-ver { font-size: .84rem; font-weight: 600; color: var(--white); }
+    .r-tag { display: inline-block; font-size: .63rem; letter-spacing: .08em; text-transform: uppercase; padding: .14rem .48rem; border-radius: 3px; margin-top: .3rem; }
+    .tag-latest { background: var(--ok-bg); color: var(--ok); }
+    .tag-stable { background: var(--info-bg); color: var(--info); }
+    .tag-beta   { background: var(--warn-bg); color: var(--warn); }
+    .r-date  { font-size: .73rem; color: var(--white-3); margin-bottom: .35rem; }
+    .r-title { font-size: .88rem; font-weight: 500; margin-bottom: .45rem; color: var(--white); }
+    .r-changes { list-style: none; }
+    .r-changes li { font-size: .84rem; color: var(--white-2); line-height: 1.65; padding-left: .9rem; position: relative; }
+    .r-changes li::before { content: '–'; position: absolute; left: 0; color: var(--white-3); }
+
+    /* ── DOCS ────────────────────────── */
+    .docs-layout { display: flex; flex-direction: column; gap: 0; }
+    .docs-tab-bar {
+      display: flex; align-items: center; gap: 0;
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 2rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .docs-tab-bar::-webkit-scrollbar { display: none; }
+    .docs-tab-group {
+      display: flex; align-items: center;
+      gap: 0;
+    }
+    .d-group-label {
+      font-size: .62rem; letter-spacing: .13em; text-transform: uppercase;
+      color: var(--white-3); padding: 0 .65rem 0 1.1rem;
+      white-space: nowrap; flex-shrink: 0;
+      border-left: 1px solid var(--rule);
+    }
+    .docs-tab-group:first-child .d-group-label { border-left: none; padding-left: 0; }
+    .d-nav-item {
+      font-size: .83rem; color: var(--white-2);
+      padding: .65rem .9rem;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+    }
+    .d-nav-item:hover { color: var(--white); }
+    .d-nav-item.active { color: var(--teal); font-weight: 500; border-bottom-color: var(--teal); }
+    .docs-content > div { display: none; }
+    .docs-content > div.visible { display: block; }
+    .d-h2 { font-size: 1.15rem; font-weight: 600; letter-spacing: -.01em; padding-bottom: .7rem; border-bottom: 1px solid var(--rule); margin-bottom: 1.4rem; color: var(--white); }
+    .d-h3 { font-size: .68rem; letter-spacing: .11em; text-transform: uppercase; color: var(--teal); margin: 1.6rem 0 .55rem; }
+    .d-p { font-size: .88rem; line-height: 1.75; color: var(--white-2); margin-bottom: .85rem; }
+    .d-ul { font-size: .88rem; line-height: 1.75; color: var(--white-2); padding-left: 1.15rem; margin-bottom: .9rem; }
+    pre {
+      font-family: var(--mono); font-size: .79rem; line-height: 1.65;
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+      border-radius: var(--r); padding: .95rem 1.2rem; overflow-x: auto; margin: .45rem 0 1.2rem; position: relative;
+    }
+    .lang { position: absolute; top: .45rem; right: .7rem; font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; color: var(--white-4); }
+    code { font-family: var(--mono); font-size: .79rem; color: var(--white-2); }
+    p code, li code { background: var(--rule-2); border: 1px solid var(--rule); padding: .09em .32em; border-radius: 3px; font-size: .77rem; color: var(--teal); }
+    .kw  { color: #60a5fa; }
+    .str { color: var(--teal); }
+    .cmt { color: rgba(255,255,255,.5); }
+    .fl  { color: var(--warn); }
+    .cmd-table { width: 100%; border-collapse: collapse; font-size: .84rem; margin: .7rem 0 1.4rem; }
+    .cmd-table th { font-size: .63rem; letter-spacing: .1em; text-transform: uppercase; color: var(--white-3); text-align: left; padding: .48rem .7rem; border-bottom: 1px solid var(--rule); }
+    .cmd-table td { padding: .55rem .7rem; border-bottom: 1px solid var(--rule-2); vertical-align: top; }
+    .cmd-table tr:last-child td { border-bottom: none; }
+    .cn { font-family: var(--mono); font-size: .77rem; color: var(--teal); }
+    .cd { color: var(--white-2); }
+
+    /* ── CONTRIBUTE ──────────────────── */
+    .contrib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--rule); margin-bottom: 2.5rem; }
+    .cc { background: var(--bg-card); padding: 1.65rem; display: flex; flex-direction: column; transition: background .15s; }
+    .cc:hover { background: rgba(255,255,255,.16); }
+    .cc h3 { font-size: .88rem; font-weight: 600; margin-bottom: .48rem; color: var(--white); }
+    .cc p  { font-size: .85rem; color: var(--white-2); line-height: 1.7; flex: 1; margin-bottom: 1.15rem; }
+    .team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 1px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--rule); margin-bottom: 3rem; }
+    .tc { background: var(--bg-card); padding: 1.4rem; text-align: center; transition: background .15s; }
+    .tc:hover { background: rgba(255,255,255,.16); }
+    .tc-av { width: 48px; height: 48px; border-radius: 50%; background: var(--teal-dim); border: 1px solid var(--teal-dim); margin: 0 auto .8rem; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+    .tc-name { font-size: .83rem; font-weight: 500; margin-bottom: .18rem; color: var(--white); }
+    .tc-role { font-size: .76rem; color: var(--white-3); }
+    .tc-gh   { font-size: .73rem; color: var(--teal); margin-top: .2rem; }
+    .roadmap { display: flex; flex-direction: column; max-width: 620px; }
+    .rm { display: flex; gap: 1.15rem; padding-bottom: 1.65rem; position: relative; }
+    .rm:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 24px; bottom: 0; width: 1px; background: var(--rule); }
+    .rm-dot { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--white-4); background: rgba(255,255,255,.06); display: flex; align-items: center; justify-content: center; font-size: .6rem; position: relative; z-index: 1; margin-top: .12rem; }
+    .rm-dot.done   { border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
+    .rm-dot.active { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+    .rm-dot.next   { border-color: var(--white-4); color: var(--white-3); }
+    .rm-title { font-size: .87rem; font-weight: 500; margin-bottom: .28rem; color: var(--white); }
+    .rm-desc  { font-size: .83rem; color: var(--white-2); line-height: 1.65; }
+    .rm-eta   { display: inline-block; margin-top: .38rem; font-size: .69rem; color: var(--white-3); border: 1px solid var(--rule); padding: .08rem .48rem; border-radius: 3px; }
+    .lic-box { border: 1px solid var(--rule); border-radius: 10px; padding: 1.65rem 1.9rem; display: flex; gap: 1.65rem; align-items: flex-start; margin-bottom: 3rem; background: var(--bg-card); }
+    .lic-badge { flex-shrink: 0; width: 64px; height: 64px; border: 1px solid var(--teal-dim); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: .78rem; font-weight: 600; color: var(--teal); line-height: 1.4; background: var(--teal-dim2); }
+    .lic-box h3 { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--white-3); margin-bottom: .38rem; }
+    .lic-box p  { font-size: .86rem; color: var(--white-2); line-height: 1.7; }
+
+    /* CTA */
+    .cta-box {
+      border-radius: 10px; padding: 2.4rem;
+      display: flex; align-items: center; justify-content: space-between; gap: 2rem; flex-wrap: wrap;
+      background: linear-gradient(135deg, rgba(18,216,180,.15) 0%, rgba(155,93,229,.12) 100%);
+      border: 1px solid var(--rule);
+    }
+    .cta-box h2 { font-size: 1.25rem; font-weight: 400; letter-spacing: -.01em; margin-bottom: .3rem; color: var(--white); }
+    .cta-box p  { font-size: .88rem; color: var(--white-3); }
+    .btn-w  { font-size: .83rem; font-weight: 500; padding: .55rem 1.3rem; border-radius: var(--r); background: var(--teal); color: var(--bg); border: 1px solid var(--teal); transition: opacity .15s; text-decoration: none; display: inline-block; white-space: nowrap; }
+    .btn-w:hover { opacity: .88; text-decoration: none; }
+    .btn-wg { font-size: .83rem; font-weight: 500; padding: .55rem 1.3rem; border-radius: var(--r); background: transparent; color: var(--white-2); border: 1px solid var(--white-4); transition: border-color .15s, color .15s; text-decoration: none; display: inline-block; white-space: nowrap; }
+    .btn-wg:hover { border-color: var(--white-3); color: var(--white); text-decoration: none; }
+
+    /* PLACEHOLDER */
+    .ph { display: inline-flex; align-items: center; gap: .28rem; font-size: .63rem; color: var(--warn); background: var(--warn-bg); border: 1px dashed rgba(251,191,36,.4); padding: .08rem .42rem; border-radius: 3px; vertical-align: middle; font-style: normal; }
+    .lorem { font-size: .86rem; color: var(--white-3); font-style: italic; line-height: 1.7; border-left: 2px dashed rgba(251,191,36,.35); padding-left: .85rem; margin: .55rem 0 .95rem; }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--rule); padding: 1.85rem 0; }
+    .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .footer-logo { display: flex; align-items: center; gap: .48rem; }
+    .footer-logo img { height: 20px; opacity: .80; }
+    .footer-logo span { font-size: .83rem; color: var(--white-2); font-weight: 500; letter-spacing: .04em; }
+    .footer-links { display: flex; gap: 1.4rem; }
+    .footer-links a { font-size: .76rem; color: var(--white-2); }
+    .footer-links a:hover { color: var(--teal); text-decoration: none; }
+    .footer-copy { font-size: .7rem; color: var(--white-3); }
+
+    /* RESPONSIVE */
+    @media (max-width: 800px) {
+      nav { padding: 0 1.2rem; }
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-panel { display: none; }
+      .stats-strip { grid-template-columns: 1fr 1fr; }
+      .stat-item:nth-child(2) { border-right: none; }
+      .docs-tab-bar { flex-wrap: nowrap; }
+      .d-group-label { display: none; }
+      .lic-box { flex-direction: column; }
+      .cta-box { flex-direction: column; }
+      .release-item { grid-template-columns: 1fr; gap: .4rem; }
+    }
+  </style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+
+<nav>
+  <a class="nav-logo" href="#home">
+    <img src="icon.png" alt="Chemlink" />
+    <span>Chemlink</span>
+  </a>
+  <div class="nav-links">
+    <a href="#home" class="active" onclick="setActive(this)">Home</a>
+    <a href="#docs" onclick="setActive(this)">Docs</a>
+    <a href="#contribute" onclick="setActive(this)">Contribute</a>
+  </div>
+  <a class="nav-cta" href="https://github.com/PipeJF9/chemlink" target="_blank">GitHub</a>
+</nav>
+
+
+<!-- HOME -->
+<section id="home">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <div class="hero-tag"><span class="tag-dot"></span>vX.X.X — Beta release <em class="ph">fill version</em></div>
+        <h1>Molecular modeling<br/><strong>at scale</strong></h1>
+        <p class="hero-sub">Chemlink is a comprehensive CLI framework for distributed molecular modeling across HPC clusters. Orchestrate, parallelize, and analyze complex chemical simulations — without the overhead.</p>
+        <div class="btn-row">
+          <a class="btn btn-teal" href="#docs">Get started</a>
+          <a class="btn btn-ghost" href="#releases">Release notes</a>
+        </div>
+      </div>
+      <div class="hero-panel">
+        <img src="icon.png" alt="Chemlink" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="stats-strip">
+    <div class="stat-item">
+      <div class="stat-num">XXX+ <em class="ph">fill</em></div>
+      <div class="stat-label">Parallel nodes</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">XX <em class="ph">fill</em></div>
+      <div class="stat-label">Core commands</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">MIT</div>
+      <div class="stat-label">License</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">HPC</div>
+      <div class="stat-label">Cluster ready</div>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Project status</div>
+    <h2 class="s-title"><strong>Health</strong> overview</h2>
+    <div class="status-grid">
+      <div class="sc"><div class="sc-lbl">Current version <em class="ph">fill</em></div><div class="sc-val info">vX.X.X</div></div>
+      <div class="sc"><div class="sc-lbl">Test coverage <em class="ph">fill</em></div><div class="sc-val ok">XX%</div></div>
+      <div class="sc"><div class="sc-lbl">Build status <em class="ph">fill</em></div><div class="sc-val ok">Passing</div></div>
+      <div class="sc"><div class="sc-lbl">Dependencies <em class="ph">fill</em></div><div class="sc-val ok">Up to date</div></div>
+      <div class="sc"><div class="sc-lbl">Stable release target <em class="ph">fill</em></div><div class="sc-val warn">QX 20XX</div></div>
+      <div class="sc"><div class="sc-lbl">MPI support</div><div class="sc-val ok">Active</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY -->
+<section id="why">
+  <div class="wrap">
+    <div class="eyebrow">Why Chemlink</div>
+    <h2 class="s-title"><strong>Purpose-built</strong> for HPC</h2>
+    <p class="s-body">Running distributed molecular simulations on HPC infrastructure is complex, fragile, and deeply manual. Chemlink abstracts the cluster orchestration layer so your team can focus on chemistry, not plumbing.</p>
+    <div class="why-grid">
+      <div class="why-card"><div class="why-num">01</div><h3>Unified CLI</h3><p>One command interface for job submission, monitoring, data collection, and post-processing across SLURM, PBS, and bare-metal clusters.</p></div>
+      <div class="why-card"><div class="why-num">02</div><h3>Simulation agnostic</h3><p>Works with GROMACS, NAMD, LAMMPS, and custom engines through a pluggable backend adapter system.</p></div>
+      <div class="why-card"><div class="why-num">03</div><h3>Distributed by design</h3><p>Native MPI coordination, automatic work partitioning, and fault-tolerant checkpointing built into every task runner.</p></div>
+      <div class="why-card"><div class="why-num">04</div><h3>Result aggregation</h3><p>Collect, normalize, and export trajectory data from all nodes as HDF5 or CSV. Plug directly into your analysis pipeline.</p></div>
+      <div class="why-card"><div class="why-num">05</div><h3>Reproducible runs</h3><p>Lock-file based environments ensure simulations are fully reproducible across clusters, users, and time.</p></div>
+      <div class="why-card"><div class="why-num">06</div><h3>Extensible</h3><p>Write custom plugins in Python to extend any stage of the pipeline — from input generation to analysis and reporting.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- RELEASES -->
+<section id="releases">
+  <div class="wrap">
+    <div class="eyebrow">Changelog</div>
+    <h2 class="s-title"><strong>Release</strong> notes</h2>
+    <div class="release-list">
+
+      <div class="release-item">
+        <div><div class="release-ver">vX.X.X <em class="ph">fill</em></div><div class="r-tag tag-latest">Latest</div></div>
+        <div>
+          <div class="r-date">YYYY-MM-DD <em class="ph">fill date</em></div>
+          <div class="r-title">Lorem ipsum release title <em class="ph">fill</em></div>
+          <ul class="r-changes">
+            <li>Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do eiusmod tempor incididunt</li>
+            <li>Ut labore et dolore magna aliqua enim ad minim veniam quis nostrud exercitation ullamco</li>
+            <li>Laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit</li>
+            <li>In voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="release-item">
+        <div><div class="release-ver">vX.X.X <em class="ph">fill</em></div><div class="r-tag tag-stable">Stable</div></div>
+        <div>
+          <div class="r-date">YYYY-MM-DD <em class="ph">fill date</em></div>
+          <div class="r-title">Lorem ipsum release title <em class="ph">fill</em></div>
+          <ul class="r-changes">
+            <li>Cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum</li>
+            <li>Sed perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque</li>
+            <li>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit sed quia</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="release-item">
+        <div><div class="release-ver">vX.X.X <em class="ph">fill</em></div><div class="r-tag tag-stable">Stable</div></div>
+        <div>
+          <div class="r-date">YYYY-MM-DD <em class="ph">fill date</em></div>
+          <div class="r-title">Lorem ipsum release title <em class="ph">fill</em></div>
+          <ul class="r-changes">
+            <li>Neque porro quisquam est qui dolorem ipsum quia dolor sit amet consectetur adipisci</li>
+            <li>Sed quia non numquam eius modi tempora incidunt labore dolore magnam aliquam quaerat</li>
+            <li>Voluptatem ut enim ad minima veniam quis nostrum exercitationem ullam corporis</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="release-item">
+        <div><div class="release-ver">vX.X.X <em class="ph">fill</em></div><div class="r-tag tag-beta">Beta</div></div>
+        <div>
+          <div class="r-date">YYYY-MM-DD <em class="ph">fill date</em></div>
+          <div class="r-title">Initial public beta <em class="ph">fill</em></div>
+          <ul class="r-changes">
+            <li>Laboriosam nisi ut aliquid ex ea commodi consequatur quis autem vel eum iure</li>
+            <li>Reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur</li>
+            <li>Vel illum qui dolorem eum fugiat quo voluptas nulla pariatur at vero eos et accusamus</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- DOCS -->
+<section id="docs">
+  <div class="wrap">
+    <div class="eyebrow">Documentation</div>
+    <h2 class="s-title" style="margin-bottom:2.5rem;"><strong>Reference</strong> guide</h2>
+    <div class="docs-layout">
+      <div class="docs-tab-bar">
+        <div class="docs-tab-group">
+          <span class="d-group-label">Getting started</span>
+          <div class="d-nav-item active" onclick="showDoc('install',this)">Installation</div>
+          <div class="d-nav-item" onclick="showDoc('config',this)">Configuration</div>
+        </div>
+        <div class="docs-tab-group">
+          <span class="d-group-label">Reference</span>
+          <div class="d-nav-item" onclick="showDoc('commands',this)">Commands</div>
+          <div class="d-nav-item" onclick="showDoc('flags',this)">Flags &amp; options</div>
+        </div>
+        <div class="docs-tab-group">
+          <span class="d-group-label">Advanced</span>
+          <div class="d-nav-item" onclick="showDoc('plugins',this)">Plugin API</div>
+          <div class="d-nav-item" onclick="showDoc('hpc',this)">HPC cluster guide</div>
+        </div>
+      </div>
+
+      <div class="docs-content">
+
+        <div id="doc-install" class="visible">
+          <div class="d-h2">Installation</div>
+          <div class="d-h3">Requirements</div>
+          <p class="d-p">Chemlink requires Python 3.9+ and pip. MPI bindings (<code>mpi4py</code>) are recommended for distributed runs.</p>
+          <p class="lorem">Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua enim ad minim veniam nostrud. <em class="ph">add real system requirements</em></p>
+          <ul class="d-ul">
+            <li>Python ≥ 3.9</li>
+            <li>pip ≥ 22</li>
+            <li>OpenMPI ≥ 4.1 or MPICH ≥ 3.4 (optional, distributed mode)</li>
+            <li>SLURM / PBS (cluster environments)</li>
+          </ul>
+          <div class="d-h3">Via pip</div>
+          <pre><span class="lang">bash</span><code><span class="kw">pip</span> install chemlink</code></pre>
+          <div class="d-h3">From source</div>
+          <pre><span class="lang">bash</span><code><span class="kw">git</span> clone https://github.com/PipeJF9/chemlink.git
+<span class="kw">cd</span> chemlink
+<span class="kw">pip</span> install -e <span class="str">".[dev]"</span></code></pre>
+          <div class="d-h3">Verify</div>
+          <pre><span class="lang">bash</span><code>chemlink --version
+<span class="cmt"># chemlink X.X.X (python 3.11.x)</span></code></pre>
+          <div class="d-h3">Optional: MPI bindings</div>
+          <pre><span class="lang">bash</span><code><span class="kw">pip</span> install chemlink[mpi]
+chemlink doctor --check mpi</code></pre>
+        </div>
+
+        <div id="doc-config">
+          <div class="d-h2">Configuration</div>
+          <p class="d-p">Chemlink uses a <code>chemlink.toml</code> at the project root, or <code>~/.chemlink/config.toml</code> for global settings.</p>
+          <div class="d-h3">Minimal config</div>
+          <pre><span class="lang">toml</span><code><span class="cmt"># chemlink.toml</span>
+[cluster]
+scheduler = <span class="str">"slurm"</span>
+nodes     = 4
+cores_per_node = 32
+
+[simulation]
+backend    = <span class="str">"gromacs"</span>
+input_dir  = <span class="str">"./inputs"</span>
+output_dir = <span class="str">"./results"</span>
+
+[mpi]
+enabled        = true
+ranks_per_node = 8</code></pre>
+          <div class="d-h3">Environment variables</div>
+          <table class="cmd-table">
+            <tr><th>Variable</th><th>Description</th></tr>
+            <tr><td class="cn">CHEMLINK_HOME</td><td class="cd">Override config directory</td></tr>
+            <tr><td class="cn">CHEMLINK_BACKEND</td><td class="cd">Override simulation backend</td></tr>
+            <tr><td class="cn">CHEMLINK_LOG_LEVEL</td><td class="cd">debug | info | warn | error</td></tr>
+            <tr><td class="cn">CHEMLINK_MPI_CMD</td><td class="cd">Custom mpirun / mpiexec path</td></tr>
+          </table>
+        </div>
+
+        <div id="doc-commands">
+          <div class="d-h2">Commands</div>
+          <div class="d-h3">Core</div>
+          <table class="cmd-table">
+            <tr><th>Command</th><th>Description</th></tr>
+            <tr><td class="cn">chemlink init</td><td class="cd">Initialize a new Chemlink project</td></tr>
+            <tr><td class="cn">chemlink run</td><td class="cd">Submit and run a simulation job</td></tr>
+            <tr><td class="cn">chemlink status</td><td class="cd">Show status of running / queued jobs</td></tr>
+            <tr><td class="cn">chemlink cancel</td><td class="cd">Cancel a running job by ID</td></tr>
+            <tr><td class="cn">chemlink collect</td><td class="cd">Aggregate results from all nodes</td></tr>
+            <tr><td class="cn">chemlink analyze</td><td class="cd">Run the built-in analysis pipeline</td></tr>
+          </table>
+          <div class="d-h3">Utility</div>
+          <table class="cmd-table">
+            <tr><th>Command</th><th>Description</th></tr>
+            <tr><td class="cn">chemlink doctor</td><td class="cd">Check environment and dependencies</td></tr>
+            <tr><td class="cn">chemlink audit</td><td class="cd">Audit cluster config and dry-run</td></tr>
+            <tr><td class="cn">chemlink log</td><td class="cd">Stream or view job logs</td></tr>
+            <tr><td class="cn">chemlink export</td><td class="cd">Export results to CSV / HDF5 / JSON</td></tr>
+            <tr><td class="cn">chemlink plugin</td><td class="cd">Manage plugins (install, list, remove)</td></tr>
+            <tr><td class="cn">chemlink clean</td><td class="cd">Remove scratch files and cache</td></tr>
+          </table>
+          <div class="d-h3">Example workflow</div>
+          <pre><span class="lang">bash</span><code><span class="cmt"># 1. Initialize</span>
+chemlink init myproject &amp;&amp; <span class="kw">cd</span> myproject
+
+<span class="cmt"># 2. Run distributed simulation</span>
+chemlink run <span class="fl">--nodes 8</span> <span class="fl">--time 04:00:00</span> inputs/protein.gro
+
+<span class="cmt"># 3. Monitor</span>
+chemlink status <span class="fl">--watch</span>
+
+<span class="cmt"># 4. Collect &amp; export</span>
+chemlink collect <span class="fl">--job-id</span> XXXX
+chemlink export  <span class="fl">--format</span> hdf5 <span class="fl">--out</span> results/traj.h5</code></pre>
+        </div>
+
+        <div id="doc-flags">
+          <div class="d-h2">Flags &amp; options</div>
+          <div class="d-h3">Global flags</div>
+          <table class="cmd-table">
+            <tr><th>Flag</th><th>Description</th></tr>
+            <tr><td class="cn">--config PATH</td><td class="cd">Path to chemlink.toml</td></tr>
+            <tr><td class="cn">--verbose / -v</td><td class="cd">Enable verbose logging</td></tr>
+            <tr><td class="cn">--dry-run</td><td class="cd">Simulate without submitting jobs</td></tr>
+            <tr><td class="cn">--no-color</td><td class="cd">Disable colored terminal output</td></tr>
+            <tr><td class="cn">--json</td><td class="cd">Output results as JSON</td></tr>
+          </table>
+          <div class="d-h3">chemlink run flags</div>
+          <table class="cmd-table">
+            <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+            <tr><td class="cn">--nodes N</td><td style="color:var(--white-3)">1</td><td class="cd">Number of cluster nodes</td></tr>
+            <tr><td class="cn">--cores N</td><td style="color:var(--white-3)">auto</td><td class="cd">Cores per node override</td></tr>
+            <tr><td class="cn">--time HH:MM:SS</td><td style="color:var(--white-3)">01:00:00</td><td class="cd">Walltime limit</td></tr>
+            <tr><td class="cn">--partition NAME</td><td style="color:var(--white-3)">default</td><td class="cd">SLURM / PBS partition</td></tr>
+            <tr><td class="cn">--checkpoint</td><td style="color:var(--white-3)">true</td><td class="cd">Enable checkpoint saving</td></tr>
+            <tr><td class="cn">--resume JOB_ID</td><td style="color:var(--white-3)">—</td><td class="cd">Resume from checkpoint</td></tr>
+          </table>
+        </div>
+
+        <div id="doc-plugins">
+          <div class="d-h2">Plugin API</div>
+          <p class="d-p">Chemlink plugins are Python packages implementing one or more plugin interfaces. They are discovered automatically when installed in the same environment.</p>
+          <div class="d-h3">Plugin structure</div>
+          <pre><span class="lang">python</span><code><span class="cmt"># myplugin/__init__.py</span>
+<span class="kw">from</span> chemlink.plugins <span class="kw">import</span> BackendPlugin
+
+<span class="kw">class</span> MyEnginePlugin(BackendPlugin):
+    name = <span class="str">"my-engine"</span>
+
+    <span class="kw">def</span> prepare(self, config):
+        ...   <span class="cmt"># generate input files</span>
+
+    <span class="kw">def</span> run(self, job):
+        ...   <span class="cmt"># submit to scheduler</span>
+
+    <span class="kw">def</span> collect(self, job):
+        ...   <span class="cmt"># gather output trajectories</span></code></pre>
+          <div class="d-h3">Register entry point</div>
+          <pre><span class="lang">toml</span><code><span class="cmt"># pyproject.toml</span>
+[project.entry-points.<span class="str">"chemlink.backends"</span>]
+my-engine = <span class="str">"myplugin:MyEnginePlugin"</span></code></pre>
+          <div class="d-h3">Available hooks</div>
+          <ul class="d-ul">
+            <li><code>BackendPlugin</code> — custom simulation engines</li>
+            <li><code>AnalysisPlugin</code> — post-processing pipelines</li>
+            <li><code>ExporterPlugin</code> — custom output formats</li>
+            <li><code>SchedulerPlugin</code> — custom job schedulers</li>
+          </ul>
+        </div>
+
+        <div id="doc-hpc">
+          <div class="d-h2">HPC cluster guide</div>
+          <div class="d-h3">SLURM setup</div>
+          <p class="d-p">Set <code>scheduler = "slurm"</code> in your config. Chemlink generates and submits SBATCH scripts automatically.</p>
+          <pre><span class="lang">bash</span><code>chemlink run inputs/system.gro \
+  <span class="fl">--nodes 16</span> <span class="fl">--partition gpu</span> \
+  <span class="fl">--time 12:00:00</span> \
+  <span class="fl">--slurm-extra</span> <span class="str">"--gres=gpu:4"</span></code></pre>
+          <div class="d-h3">PBS / Torque</div>
+          <pre><span class="lang">toml</span><code>[cluster]
+scheduler = <span class="str">"pbs"</span>
+queue     = <span class="str">"workq"</span></code></pre>
+          <div class="d-h3">Bare metal / SSH</div>
+          <p class="d-p">For clusters without a scheduler, use <code>scheduler = "bare"</code>. Chemlink will SSH into each node and launch MPI workers directly.</p>
+          <p class="lorem">Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua enim nostrud. <em class="ph">add bare metal setup steps</em></p>
+          <div class="d-h3">Performance tips</div>
+          <ul class="d-ul">
+            <li>Set <code>ranks_per_node</code> to match physical core count</li>
+            <li>Use <code>--checkpoint</code> for runs longer than 4 hours</li>
+            <li>Set <code>CHEMLINK_LOG_LEVEL=warn</code> for production</li>
+            <li>Run <code>chemlink audit</code> to validate config before submission</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- CONTRIBUTE -->
+<section id="contribute">
+  <div class="wrap">
+    <div class="eyebrow">Open source</div>
+    <h2 class="s-title"><strong>Contribute</strong></h2>
+    <p class="s-body">Chemlink is built in the open. We welcome contributions of all kinds — from bug reports and documentation to new backend adapters and features. <em class="ph">add contribution philosophy</em></p>
+
+    <div class="contrib-grid">
+      <div class="cc">
+        <h3>Fork on GitHub</h3>
+        <p>Fork the repository, create a feature branch, and open a pull request. All contributions go through code review. <em class="ph">add contribution guide link</em></p>
+        <a class="btn btn-teal" href="https://github.com/PipeJF9/chemlink/fork" target="_blank">Fork repo</a>
+      </div>
+      <div class="cc">
+        <h3>Report issues</h3>
+        <p>Found a bug or have a feature request? Open an issue with as much detail as possible — logs, OS, and cluster config help. <em class="ph">add issue template</em></p>
+        <a class="btn btn-ghost" href="https://github.com/PipeJF9/chemlink/issues" target="_blank">Open issue</a>
+      </div>
+      <div class="cc">
+        <h3>Improve docs</h3>
+        <p>Documentation improvements are always welcome. The docs source lives in <code>/docs</code> in the main repo. <em class="ph">add doc guide</em></p>
+        <a class="btn btn-ghost" href="https://github.com/PipeJF9/chemlink/tree/main/docs" target="_blank">Edit docs</a>
+      </div>
+      <div class="cc">
+        <h3>Community <em class="ph">fill</em></h3>
+        <p class="lorem">Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua enim veniam quis nostrud.</p>
+        <a class="btn btn-ghost" href="#" target="_blank">Join discussion <em class="ph">add link</em></a>
+      </div>
+    </div>
+
+    <div class="eyebrow" style="margin-top:3rem;">Maintainers</div>
+    <h3 class="s-title" style="margin-bottom:1.4rem;"><strong>Core team</strong> <em class="ph">fill with real names</em></h3>
+    <div class="team-grid">
+      <div class="tc"><div class="tc-av">👤</div><div class="tc-name">Firstname Lastname <em class="ph">fill</em></div><div class="tc-role">Lead Developer</div><div class="tc-gh">@github-handle</div></div>
+      <div class="tc"><div class="tc-av">👤</div><div class="tc-name">Firstname Lastname <em class="ph">fill</em></div><div class="tc-role">HPC Integration</div><div class="tc-gh">@github-handle</div></div>
+      <div class="tc"><div class="tc-av">👤</div><div class="tc-name">Firstname Lastname <em class="ph">fill</em></div><div class="tc-role">Simulation Backends</div><div class="tc-gh">@github-handle</div></div>
+      <div class="tc"><div class="tc-av">👤</div><div class="tc-name">Firstname Lastname <em class="ph">fill</em></div><div class="tc-role">Documentation</div><div class="tc-gh">@github-handle</div></div>
+    </div>
+
+    <div class="eyebrow" style="margin-top:3rem;">Roadmap</div>
+    <h3 class="s-title" style="margin-bottom:1.75rem;"><strong>What's next</strong> <em class="ph">update milestones</em></h3>
+    <div class="roadmap">
+      <div class="rm"><div class="rm-dot done">✓</div><div><div class="rm-title">Core CLI framework</div><div class="rm-desc">Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore. <em class="ph">describe</em></div><span class="rm-eta">Completed · vX.X</span></div></div>
+      <div class="rm"><div class="rm-dot done">✓</div><div><div class="rm-title">Plugin system</div><div class="rm-desc">Ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. <em class="ph">describe</em></div><span class="rm-eta">Completed · vX.X</span></div></div>
+      <div class="rm"><div class="rm-dot active">◉</div><div><div class="rm-title">Distributed checkpoint recovery <em class="ph">fill</em></div><div class="rm-desc">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur sint. <em class="ph">describe</em></div><span class="rm-eta">In progress · vX.X · ETA QX 20XX</span></div></div>
+      <div class="rm"><div class="rm-dot next">○</div><div><div class="rm-title">Lorem ipsum feature X <em class="ph">fill</em></div><div class="rm-desc">Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim laborum. <em class="ph">describe</em></div><span class="rm-eta">Planned · QX 20XX</span></div></div>
+      <div class="rm"><div class="rm-dot next">○</div><div><div class="rm-title">Lorem ipsum feature Y <em class="ph">fill</em></div><div class="rm-desc">Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit fugit sed quia consequuntur magni dolores. <em class="ph">describe</em></div><span class="rm-eta">Planned · QX 20XX</span></div></div>
+    </div>
+
+    <div class="lic-box" style="margin-top:3rem;">
+      <div class="lic-badge">MIT<br/>©20XX</div>
+      <div>
+        <h3>License — MIT <em class="ph">confirm license</em></h3>
+        <p>Chemlink is released under the MIT License. You are free to use, modify, and distribute this software in any project — commercial or otherwise — provided the copyright notice and permission notice appear in all copies.</p>
+        <p style="margin-top:.7rem;"><a href="https://github.com/PipeJF9/chemlink/blob/main/LICENSE" target="_blank">View full license text →</a></p>
+      </div>
+    </div>
+
+    <div class="cta-box">
+      <div>
+        <h2>Ready to model?</h2>
+        <p>Install Chemlink and run your first distributed simulation in minutes.</p>
+      </div>
+      <div style="display:flex;gap:.65rem;flex-wrap:wrap;">
+        <a class="btn-w" href="#docs">Read the docs</a>
+        <a class="btn-wg" href="https://github.com/PipeJF9/chemlink" target="_blank">★ Star on GitHub</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<footer>
+  <div class="wrap footer-inner">
+    <div class="footer-logo">
+      <img src="icon.png" alt="Chemlink" />
+      <span>Chemlink</span>
+    </div>
+    <div class="footer-links">
+      <a href="#home">Home</a>
+      <a href="#docs">Docs</a>
+      <a href="#contribute">Contribute</a>
+      <a href="https://github.com/PipeJF9/chemlink" target="_blank">GitHub</a>
+    </div>
+    <div class="footer-copy">MIT License · Built for HPC</div>
+  </div>
+</footer>
+
+<script>
+  function setActive(el) {
+    document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+  }
+  function showDoc(id, el) {
+    document.querySelectorAll('.docs-content > div').forEach(d => d.classList.remove('visible'));
+    document.querySelectorAll('.d-nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('doc-' + id).classList.add('visible');
+    el.classList.add('active');
+  }
+  document.querySelectorAll('section[id]').forEach(s => {
+    new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        const id = e.target.id;
+        document.querySelectorAll('.nav-links a').forEach(a => {
+          const h = a.getAttribute('href').replace('#','');
+          a.classList.toggle('active', h === id || (h === 'home' && (id === 'why' || id === 'releases')));
+        });
+      });
+    }, { threshold: 0.25 }).observe(s);
+  });
+
+  /* ── MESH GRADIENT CANVAS ─── */
+  (function() {
+    const c = document.getElementById('bg-canvas');
+    const ctx = c.getContext('2d');
+
+    // blobs: [x%, y%, radius%, r,g,b, alpha]
+    const blobs = [
+      { x:.5,  y:.5,  r:.55, color:[15,22,80],    a:.98 },  // deep navy center
+      { x:-.05,y:.72, r:.45, color:[200,30,120],   a:.65 },  // magenta/pink bottom-left
+      { x:1.1, y:-.1, r:.50, color:[0,200,160],    a:.60 },  // teal top-right
+      { x:.2,  y:.3,  r:.38, color:[80,40,180],    a:.50 },  // purple mid-left
+      { x:.75, y:.8,  r:.38, color:[20,80,200],    a:.42 },  // blue bottom-right
+    ];
+
+    // slow drift targets
+    const drift = blobs.map(() => ({
+      dx: (Math.random()-.5) * .006,
+      dy: (Math.random()-.5) * .006,
+    }));
+
+    let W, H;
+    function resize() {
+      W = c.width  = window.innerWidth;
+      H = c.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // update drift
+      blobs.forEach((b, i) => {
+        b.x += drift[i].dx;
+        b.y += drift[i].dy;
+        if (b.x < -.3 || b.x > 1.3) drift[i].dx *= -1;
+        if (b.y < -.3 || b.y > 1.3) drift[i].dy *= -1;
+      });
+
+      // draw back-to-front
+      blobs.forEach(b => {
+        const gx = b.x * W, gy = b.y * H;
+        const gr = b.r * Math.max(W, H);
+        const [r,g,bl] = b.color;
+        const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+        grad.addColorStop(0,   `rgba(${r},${g},${bl},${b.a})`);
+        grad.addColorStop(.45, `rgba(${r},${g},${bl},${b.a * .4})`);
+        grad.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      });
+
+      requestAnimationFrame(draw);
+    }
+    draw();
+  })();
+</script>
+</body>
+</html>
