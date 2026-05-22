@@ -81,8 +81,8 @@ chemlink dynamics --help # opciones del pipeline de dinámica
 
 | Nombre |
 |---|
-| Daniel José Romero Martinez |
-| Augusto Salazar Silva |
+| Daniel José Romero Martinez — [@djromerom](https://github.com/djromerom) |
+| Augusto Salazar Silva — [@augustosalazar](https://github.com/augustosalazar) |
 
 ## Créditos
 

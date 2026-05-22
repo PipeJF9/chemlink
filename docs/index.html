@@ -280,13 +280,12 @@
       background: rgba(255,255,255,.07);
       border: 1px solid rgba(255,255,255,.12);
       border-radius: 4px;
-      color: rgba(255,255,255,.45);
-      font-size: .62rem; letter-spacing: .06em; text-transform: uppercase;
-      font-family: var(--mono);
-      padding: .18rem .52rem;
+      color: rgba(255,255,255,.40);
+      padding: .26rem .28rem;
       cursor: pointer;
       transition: background .15s, border-color .15s, color .15s;
-      line-height: 1.4;
+      line-height: 0;
+      display: flex; align-items: center; justify-content: center;
     }
     .copy-btn:hover { background: rgba(18,216,180,.14); border-color: rgba(18,216,180,.35); color: var(--teal); }
     .copy-btn.copied { background: rgba(18,216,180,.14); border-color: rgba(18,216,180,.35); color: var(--teal); }
@@ -536,44 +535,6 @@
         </div>
       </div>
 
-      <div class="release-item">
-        <div><div class="release-ver">v0.3.0</div><div class="r-tag tag-stable">Stable</div></div>
-        <div>
-          <div class="r-date">2026-04-10</div>
-          <div class="r-title">Dynamics pipeline &amp; GROMACS integration</div>
-          <ul class="r-changes">
-            <li>Added <code>chemlink dynamics</code> command with full GROMACS 2025.4 workflow</li>
-            <li>Support for 6 biological system types: protein, protein-ligand, membrane, protein-membrane, solvated ligand, custom</li>
-            <li>SLURM Job Array mode for distributed MD runs across multiple GPU nodes</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="release-item">
-        <div><div class="release-ver">v0.2.0</div><div class="r-tag tag-stable">Stable</div></div>
-        <div>
-          <div class="r-date">2026-03-01</div>
-          <div class="r-title">Docking pipeline &amp; SLURM integration</div>
-          <ul class="r-changes">
-            <li>Full docking pipeline: fpocket → AutoGrid4 → AutoDock-GPU with CUDA sm_89/90/120 targets</li>
-            <li>SLURM Job Arrays for distributed docking across GPU nodes</li>
-            <li>NFS shared storage configuration and passwordless SSH cluster setup</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="release-item">
-        <div><div class="release-ver">v0.1.0</div><div class="r-tag tag-beta">Beta</div></div>
-        <div>
-          <div class="r-date">2026-01-15</div>
-          <div class="r-title">Initial beta — CLI framework &amp; Conda environments</div>
-          <ul class="r-changes">
-            <li>Unified CLI scaffold with <code>chemlink doctor</code> environment checker</li>
-            <li>Conda environments: <code>bio</code> (Python 3.10, ACPYPE, AmberTools, OpenBabel, RDKit) and <code>mgl_legacy</code> (Python 2, MGLTools)</li>
-            <li>Docker image based on <code>nvidia/cuda:13.0.0-devel-ubuntu24.04</code></li>
-          </ul>
-        </div>
-      </div>
 
     </div>
   </div>
@@ -872,17 +833,20 @@ chemlink docking \
   });
 
   /* ── COPY BUTTONS ── */
+  const ICON_COPY  = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
   document.querySelectorAll('pre').forEach(pre => {
     const btn = document.createElement('button');
     btn.className = 'copy-btn';
-    btn.textContent = 'copy';
+    btn.innerHTML = ICON_COPY;
+    btn.title = 'Copiar';
     btn.addEventListener('click', () => {
       const code = pre.querySelector('code');
       const text = (code ? code : pre).innerText;
       navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '✓ copied';
+        btn.innerHTML = ICON_CHECK;
         btn.classList.add('copied');
-        setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+        setTimeout(() => { btn.innerHTML = ICON_COPY; btn.classList.remove('copied'); }, 2000);
       });
     });
     pre.appendChild(btn);
