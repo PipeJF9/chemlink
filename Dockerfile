@@ -121,7 +121,7 @@ COPY . .
 
 # Dependencias Python del proyecto
 RUN /opt/miniconda/envs/bio/bin/python -m ensurepip && \
-    /opt/miniconda/envs/bio/bin/python -m pip install --no-cache-dir biopython numpy
+    /opt/miniconda/envs/bio/bin/python -m pip install --no-cache-dir biopython numpy rich
 
 RUN echo "source /usr/local/gromacs/bin/GMXRC" >> /etc/bash.bashrc
 
