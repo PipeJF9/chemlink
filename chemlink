@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+REPO=/nfs/chemlink/chemlink
+export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+exec /nfs/chemlink/miniconda/envs/bio/bin/python -m chemlink.cli.main "$@"

@@ -1,0 +1,1775 @@
+"""ChemLink CLI — unified molecular simulation toolkit entry point."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+from argparse import ArgumentParser, HelpFormatter, Namespace
+from datetime import datetime
+from typing import Optional, Tuple
+from uuid import uuid4
+
+from rich import box as rich_box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+console     = Console()
+err_console = Console(stderr=True)
+
+# ── ANSI helpers (kept for argparse formatter only) ────────────────────────────
+_TTY = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+def _c(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _TTY else text
+
+def bold(t: str) -> str:        return _c("1",    t)
+def dim(t: str) -> str:         return _c("2",    t)
+def cyan(t: str) -> str:        return _c("36",   t)
+def bold_cyan(t: str) -> str:   return _c("1;36", t)
+def bold_red(t: str) -> str:    return _c("1;31", t)
+def yellow(t: str) -> str:      return _c("33",   t)
+
+
+# ── Logo ───────────────────────────────────────────────────────────────────────
+LOGO = """\
+    
+    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣠⣴⣾⠷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+    ⠀⠀⠀⠀⠀⠀⣀⣤⣶⡿⠿⠛⠉⣀⣤⣶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+    ⠀⠀⣀⣤⣶⡿⠟⠋⢁⣠⣤⣶⣿⠿⠛⠉⠛⠿⢿⣶⣦⣄⡀⠀⠀⠀⠀⠀⠀⠀
+    ⠲⡿⠟⠋⢁⣠⣴⣾⡿⠟⠋⢁⣠⣴⣾⣿⣷⣦⣄⡈⠙⠻⢿⣷⣦⣄⡀⠀⠀⠀
+    ⠀⠀⢰⣾⡿⠟⠋⢁⣠⣴⣾⣿⣿⠿⠛⠉⠙⠻⢿⣿⣿⣶⣤⣈⠙⠻⠋⠀⢠⣤
+    ⠀⠀⢸⣿⡇⠀⣿⣿⡿⠟⢻⣿⣷⠀⠀⠀⠀⠀⠀⠈⠙⠻⢿⣿⣿⡆⠀⠀⢸⣿
+    ⠀⠀⢸⣿⡇⠀⣿⣿⡇⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⡇⠀⠀⢸⣿
+    ⠀⠀⢸⣿⡇⠀⣿⣿⡇⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⡇⠀⠀⢸⣿
+    ⠀⠀⢸⣿⡇⠀⣿⣿⡇⠀⢸⣿⣷⣤⣄⡀⠀⠀⠀⠀⠀⠀⢸⣿⣿⡇⠀⠀⢸⣿
+    ⠀⠀⢸⣿⡇⠀⣿⣿⣷⣤⣀⠈⠙⠻⠿⣿⣷⣶⣤⣀⣀⣤⣾⣿⣿⠇⠀⠀⢸⣿
+    ⠀⠀⠸⢿⣷⣦⣄⡉⠛⠿⣿⣿⣷⣦⣄⡀⣉⣽⣿⣿⣿⡿⠟⢋⣡⣄⠀⠀⠸⠿
+    ⢾⣶⣤⣀⡈⠙⠻⢿⣷⣦⣄⡉⠛⠿⣿⣿⣿⠿⠛⢉⣠⣴⣾⡿⠟⠋⠁⠀⠀⠀
+    ⠀⠈⠙⠻⠿⣷⣦⣄⡈⠙⠻⢿⣷⣦⣄⣉⣠⣴⣾⡿⠟⠋⠁⠀⠀⠀⠀⠀⠀⠀
+    ⠀⠀⠀⠀⠀⠀⠉⠛⠿⣷⣦⣄⡈⠙⠻⠿⠟⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠿⣷⡦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+\
+"""
+
+VERSION        = "0.1.0"
+DOCTOR_VERSION = "1.0"
+
+# ── Default paths ──────────────────────────────────────────────────────────────
+_REC_IN  = "data/input/receptors"
+_LIG_IN  = "data/input/ligands"
+_OUT     = "data/output"
+_REC_OUT = f"{_OUT}/prepared_receptors_pdbqt"
+_LIG_OUT = f"{_OUT}/prepared_ligands_pdbqt"
+PIPELINE_STEPS = ("receptor", "ligand", "active-site", "execution", "analysis")
+
+
+# ── Output helpers ─────────────────────────────────────────────────────────────
+
+def print_ok(msg: str)   -> None: console.print(f"  [bold green]✓[/]  {msg}")
+def print_err(msg: str)  -> None: console.print(f"  [bold red]✗[/]  {msg}")
+def print_warn(msg: str) -> None: console.print(f"  [bold yellow]![/]  {msg}")
+def print_info(msg: str) -> None: console.print(f"  [cyan]·[/]  {msg}")
+
+
+def print_stats(stats: dict, title: str = "Results") -> None:
+    t = Table(
+        title=f"[bold cyan]{title}[/]",
+        box=rich_box.ROUNDED,
+        border_style="cyan",
+        header_style="bold cyan",
+        show_header=True,
+        min_width=40,
+    )
+    t.add_column("Metric", style="dim")
+    t.add_column("Value",  style="bold")
+    for k, v in stats.items():
+        t.add_row(str(k), str(v))
+    console.print()
+    console.print(t)
+
+
+# ── Custom argparse formatter ──────────────────────────────────────────────────
+
+class _Fmt(HelpFormatter):
+    def __init__(self, prog: str):
+        super().__init__(prog, max_help_position=32, width=88)
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        return "\n".join(indent + line for line in text.splitlines())
+
+    def start_section(self, heading: Optional[str]) -> None:
+        super().start_section(bold_cyan(heading.upper()) if heading else heading)
+
+    def _format_action_invocation(self, action) -> str:
+        return cyan(super()._format_action_invocation(action))
+
+    def _format_usage(self, usage, actions, groups, prefix) -> str:
+        return super()._format_usage(
+            usage, actions, groups,
+            bold("Usage: ") if prefix is None else prefix,
+        )
+
+
+# ── Custom parser with coloured errors ────────────────────────────────────────
+
+_TOP_CMDS = ["docking", "dynamic", "doctor", "completion", "hpc"]
+
+
+def _suggest(word: str) -> list:
+    if not word or word.startswith("-"):
+        return []
+    return [c for c in _TOP_CMDS if c.startswith(word) or word in c][:3]
+
+
+class _Parser(ArgumentParser):
+    def error(self, message: str) -> None:
+        err_console.print(f"\n[bold red]Error:[/] {message}")
+        if len(sys.argv) > 1:
+            matches = _suggest(sys.argv[1])
+            if matches:
+                suggestions = ", ".join(f"[cyan]{m}[/]" for m in matches)
+                err_console.print(f"  Did you mean: {suggestions}?")
+        err_console.print(f"\n  Run [cyan]chemlink --help[/] to see all commands.\n")
+        sys.exit(2)
+
+
+# ── Misc helpers ───────────────────────────────────────────────────────────────
+
+def _manual_params(args: Namespace) -> Tuple[Optional[tuple], Optional[tuple]]:
+    if (args.manual_center is None) != (args.manual_npts is None):
+        err_console.print(
+            "[bold red]Error:[/] --manual-center and --manual-npts must be used together."
+        )
+        sys.exit(1)
+    center = tuple(args.manual_center) if args.manual_center else None
+    npts   = tuple(args.manual_npts)   if args.manual_npts   else None
+    return center, npts
+
+
+def _run_dir(base: str) -> str:
+    os.makedirs(base, exist_ok=True)
+    name = f"run_{datetime.now():%Y%m%dT%H%M%S}_{uuid4().hex[:8]}"
+    path = os.path.join(base, name)
+    os.makedirs(path)
+    return path
+
+
+# ── Docking command handlers ───────────────────────────────────────────────────
+
+def _run_receptor_preparation(args: Namespace) -> int:
+    try:
+        from ..pipelines.docking.steps import ReceptorPreparation
+    except ImportError:
+        from chemlink.pipelines.docking.steps import ReceptorPreparation  # type: ignore
+    step = ReceptorPreparation(
+        input_path=args.input_dir,
+        output_path=args.output_dir,
+        mgltools_path=args.mgltools_path,
+    )
+    print_stats(step.prepare(n_workers=args.workers), "Receptor Preparation")
+    return 0
+
+
+def _run_ligand_preparation(args: Namespace) -> int:
+    try:
+        from ..pipelines.docking.steps import LigandPreparation
+    except ImportError:
+        from chemlink.pipelines.docking.steps import LigandPreparation  # type: ignore
+    step = LigandPreparation(input_path=args.input_dir, output_path=args.output_dir)
+    print_stats(step.prepare(n_workers=args.workers), "Ligand Preparation")
+    return 0
+
+
+def _run_active_site(args: Namespace) -> int:
+    try:
+        from ..pipelines.docking.steps import ActiveSiteDetection
+    except ImportError:
+        from chemlink.pipelines.docking.steps import ActiveSiteDetection  # type: ignore
+    center, npts = _manual_params(args)
+    step = ActiveSiteDetection(
+        receptor_path=args.receptor_dir,
+        ligand_path=args.ligand_dir,
+        output_path=args.output_dir,
+        mgltools_path=args.mgltools_path,
+        fpocket_path=args.fpocket_path,
+        manual_center=center,
+        manual_npts=npts,
+    )
+    print_stats(step.prepare(n_workers=args.workers), "Active Site Detection")
+    return 0
+
+
+def _run_docking_execution(args: Namespace) -> int:
+    try:
+        from ..pipelines.docking.steps import DockingExecution
+    except ImportError:
+        from chemlink.pipelines.docking.steps import DockingExecution  # type: ignore
+    step = DockingExecution(
+        protein_maps_dir=args.prepared_receptors_dir,
+        ligand_dir=args.prepared_ligands_dir,
+        output_path=args.output_dir,
+        autogrid_executable=args.autogrid_executable,
+        autodock_gpu_executable=args.autodock_gpu_executable,
+    )
+    workers = getattr(args, "workers", getattr(args, "docking_workers", 1))
+    print_stats(step.run(n_workers=workers), "Docking Execution")
+    return 0
+
+
+def _run_docking_analysis(args: Namespace) -> int:
+    try:
+        from ..pipelines.docking.steps import DockingAnalysis
+    except ImportError:
+        from chemlink.pipelines.docking.steps import DockingAnalysis  # type: ignore
+    step = DockingAnalysis(
+        output_path=args.output_dir,
+        pdb_export_limit=args.pdb_export_limit,
+        max_workers=args.max_workers,
+    )
+    results = step.run()
+    print_stats(
+        {"Poses analyzed": results["parsed_poses"], "Ligands analyzed": results["analyzed_ligands"]},
+        "Docking Analysis",
+    )
+    outputs = results.get("outputs", {})
+    if outputs:
+        console.print(f"\n  [bold]Output files:[/]")
+        for name, path in outputs.items():
+            print_ok(f"[dim]{name}[/]: {path}")
+    else:
+        print_warn(f"No DLG files found under {args.output_dir}/docking_results/**/dlg/*.dlg")
+    return 0
+
+
+def _run_docking_flow(args: Namespace) -> int:
+    try:
+        from ..pipelines.docking import DockingPipeline
+    except ImportError:
+        from chemlink.pipelines.docking import DockingPipeline  # type: ignore
+    center, npts = _manual_params(args)
+    run_output = _run_dir(args.output_dir)
+    result = DockingPipeline(
+        receptor_input_path=args.receptor_input_dir,
+        ligand_input_path=args.ligand_input_dir,
+        output_path=run_output,
+        mgltools_path=args.mgltools_path,
+        fpocket_path=args.fpocket_path,
+        manual_center=center,
+        manual_npts=npts,
+    ).run_step_range(
+        from_step=args.from_step,
+        to_step=args.to_step,
+        receptor_workers=args.receptor_workers,
+        ligand_workers=args.ligand_workers,
+        active_site_workers=args.active_site_workers,
+        docking_workers=args.docking_workers,
+        autogrid_executable=args.autogrid_executable,
+        autodock_gpu_executable=args.autodock_gpu_executable,
+        pdb_export_limit=args.pdb_export_limit,
+        max_workers=args.max_workers,
+    )
+    stats: dict = {"Run directory": run_output, "Steps": ", ".join(result.executed_steps)}
+    if "receptor"    in result.executed_steps: stats["Receptors"]         = result.receptor_preparation
+    if "ligand"      in result.executed_steps: stats["Ligands"]           = result.ligand_preparation
+    if "active-site" in result.executed_steps: stats["Active sites"]      = result.active_site_detection
+    if "execution"   in result.executed_steps and result.docking_execution:
+        stats["Docking execution"] = result.docking_execution
+    if "analysis"    in result.executed_steps and result.docking_analysis:
+        stats["Docking analysis"]  = result.docking_analysis
+    print_stats(stats, "Pipeline Results")
+    return 0
+
+
+def _run_docking_pipeline(args: Namespace, *, full: bool) -> int:
+    try:
+        from ..pipelines.docking import DockingPipeline
+    except ImportError:
+        from chemlink.pipelines.docking import DockingPipeline  # type: ignore
+    center, npts = _manual_params(args)
+    out = _run_dir(args.output_dir) if full else args.output_dir
+    pipeline = DockingPipeline(
+        receptor_input_path=args.receptor_input_dir,
+        ligand_input_path=args.ligand_input_dir,
+        output_path=out,
+        mgltools_path=args.mgltools_path,
+        fpocket_path=args.fpocket_path,
+        manual_center=center,
+        manual_npts=npts,
+    )
+    result = (
+        pipeline.run_full_pipeline(
+            receptor_workers=args.receptor_workers,
+            ligand_workers=args.ligand_workers,
+            active_site_workers=args.active_site_workers,
+            docking_workers=args.docking_workers,
+            autogrid_executable=args.autogrid_executable,
+            autodock_gpu_executable=args.autodock_gpu_executable,
+            pdb_export_limit=args.pdb_export_limit,
+        )
+        if full
+        else pipeline.run_preparation_pipeline(
+            receptor_workers=args.receptor_workers,
+            ligand_workers=args.ligand_workers,
+            active_site_workers=args.active_site_workers,
+        )
+    )
+    stats: dict = {}
+    if full:
+        stats["Run directory"] = out
+    stats.update({
+        "Receptors":    result.receptor_preparation,
+        "Ligands":      result.ligand_preparation,
+        "Active sites": result.active_site_detection,
+    })
+    if result.docking_execution: stats["Docking execution"] = result.docking_execution
+    if result.docking_analysis:  stats["Docking analysis"]  = result.docking_analysis
+    print_stats(stats, "Pipeline Results")
+    return 0
+
+
+# ── Dynamics command handler ───────────────────────────────────────────────────
+
+def _resolve_file(filename: str, *, from_input_dir: bool) -> str:
+    return os.path.join("data/input/dynamics", filename) if from_input_dir else filename
+
+
+_DYN_SPEC = {
+    #  name        sim_id  label                              min_files
+    "oprotein":  ("1", "Protein",                               1),
+    "pligand":   ("2", "Protein + Ligand",                      2),
+    "ppeptide":  ("3", "Protein + Peptide",                     2),
+    "pacid":     ("4", "Protein + Nucleic Acid",                2),
+    "pprotein":  ("5", "Protein + Protein",                     2),
+    "ppligand":  ("6", "Protein + Protein + Ligand/Cofactor",   3),
+}
+
+_DYN_FILE_LABELS = {
+    "oprotein":  ["protein"],
+    "pligand":   ["protein", "ligand"],
+    "ppeptide":  ["protein", "peptide"],
+    "pacid":     ["protein", "nucleic_acid"],
+    "pprotein":  ["protein1", "protein2"],
+    "ppligand":  ["protein1", "protein2", "ligand"],
+}
+
+
+def _run_dynamic(args: Namespace) -> int:
+    try:
+        from ..pipelines.dynamics.dynamics_pipeline import DynamicsPipeline
+        from ..pipelines.dynamics.utils import get_system_threads, setup_work_directory
+    except ImportError:
+        try:
+            from chemlink.pipelines.dynamics.dynamics_pipeline import DynamicsPipeline  # type: ignore
+            from chemlink.pipelines.dynamics.utils import get_system_threads, setup_work_directory  # type: ignore
+        except ImportError:
+            from pipelines.dynamics.dynamics_pipeline import DynamicsPipeline  # type: ignore
+            from pipelines.dynamics.utils import get_system_threads, setup_work_directory  # type: ignore
+
+    dyn_type = args.dyn_type
+    sim_id, label, min_files = _DYN_SPEC[dyn_type]
+
+    all_files = (
+        [_resolve_file(f, from_input_dir=True) for f in (args.input_files or [])]
+        + list(getattr(args, "files", None) or [])
+    )
+
+    if len(all_files) < min_files:
+        needed = ", ".join(_DYN_FILE_LABELS[dyn_type])
+        err_console.print(
+            f"\n[bold red]Error:[/] '{dyn_type}' requires {min_files} file(s): {needed}\n"
+            f"  Got {len(all_files)}. Use [cyan]-i FILE[/] for files inside data/input/dynamics.\n"
+        )
+        return 1
+
+    work_dir = setup_work_directory("data/output/dynamics", dyn_type)
+    threads  = get_system_threads()
+    config: dict = {
+        "sim_type":       sim_id,
+        "sim_type_label": label,
+        "ns_time":        args.time,
+        "threads":        threads,
+        "work_dir":       work_dir,
+    }
+
+    if dyn_type == "oprotein":
+        config["pdb_input"] = all_files[0]
+    elif dyn_type == "pligand":
+        config.update(pdb_input=all_files[0], ligand_pdb=all_files[1],
+                      ligand_charge=args.charge)
+    elif dyn_type in ("ppeptide", "pacid", "pprotein"):
+        config.update(pdb_protein=all_files[0], pdb_partner=all_files[1],
+                      pdb_input=os.path.join(work_dir, "complex.pdb"))
+    elif dyn_type == "ppligand":
+        config.update(pdb_protein=all_files[0], pdb_partner=all_files[1],
+                      pdb_input=os.path.join(work_dir, "complex.pdb"),
+                      ligand_pdb=all_files[2], ligand_charge=args.charge)
+
+    t = Table(
+        title=f"[bold cyan]Simulation Parameters[/]",
+        box=rich_box.ROUNDED,
+        border_style="cyan",
+        show_header=False,
+        min_width=40,
+    )
+    t.add_column(style="dim",  no_wrap=True)
+    t.add_column(style="bold")
+    t.add_row("Simulation", label)
+    t.add_row("Duration",   f"{args.time} ns")
+    t.add_row("Threads",    str(threads))
+    t.add_row("Output",     work_dir)
+    console.print()
+    console.print(t)
+    console.print()
+
+    DynamicsPipeline(config).execute()
+    return 0
+
+
+# ── Doctor ─────────────────────────────────────────────────────────────────────
+
+def _run_doctor(args: Namespace) -> int:
+    from hpc.cluster.resource_detector import get_hardware_profile
+
+    # ── helpers ────────────────────────────────────────────────────────────────
+
+    def _chk(
+        name: str, cat: str, level: str, detail: str,
+        suggestion: Optional[str] = None,
+    ) -> dict:
+        return {"name": name, "cat": cat, "level": level,
+                "detail": detail, "suggestion": suggestion}
+
+    def _has_module(name: str) -> bool:
+        return importlib.util.find_spec(name) is not None
+
+    def _module_version(name: str) -> Optional[str]:
+        try:
+            from importlib.metadata import version as _v
+            return _v(name)
+        except Exception:
+            return None
+
+    def _find_binary(*candidates: str, fallback_paths: Optional[list] = None) -> Optional[str]:
+        for name in candidates:
+            found = shutil.which(name)
+            if found:
+                return found
+        for path in (fallback_paths or []):
+            if path and os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+        return None
+
+    def _gmx_version(binary: str) -> str:
+        try:
+            r = subprocess.run(
+                [binary, "--version"], capture_output=True, text=True, timeout=8,
+            )
+            m = re.search(r"GROMACS\s+version[:\s]+(\S+)", r.stdout + r.stderr, re.IGNORECASE)
+            return m.group(1).strip() if m else "found"
+        except Exception:
+            return "found"
+
+    # ── collect checks ─────────────────────────────────────────────────────────
+
+    checks: list = []
+
+    # -- software ---------------------------------------------------------------
+
+    py_ok = sys.version_info >= (3, 9)
+    checks.append(_chk(
+        "Python ≥ 3.9", "software",
+        "ok" if py_ok else "error",
+        sys.version.split()[0],
+        None if py_ok else "Upgrade Python to 3.9 or later.",
+    ))
+
+    for pkg, required in [
+        ("tqdm",     True),
+        ("numpy",    True),
+        ("rdkit",    False),
+        ("pdbfixer", False),
+    ]:
+        found = _has_module(pkg)
+        ver   = _module_version(pkg) or ("installed" if found else "not found")
+        level = ("error" if required else "warning") if not found else "ok"
+        checks.append(_chk(
+            pkg, "software", level, ver,
+            f"pip install {pkg}" if not found else None,
+        ))
+
+    gmx_bin = shutil.which("gmx") or shutil.which("gmx_mpi")
+    checks.append(_chk(
+        "GROMACS (gmx)", "software",
+        "ok" if gmx_bin else "warning",
+        _gmx_version(gmx_bin) if gmx_bin else "not found",
+        "Install GROMACS and ensure `gmx` is on PATH." if not gmx_bin else None,
+    ))
+
+    mgl_bin = shutil.which("pythonsh")
+    checks.append(_chk(
+        "MGLTools (pythonsh)", "software",
+        "ok" if mgl_bin else "warning",
+        mgl_bin or "not found",
+        "Install MGLTools and add its bin/ to PATH." if not mgl_bin else None,
+    ))
+
+    fpocket_bin = shutil.which("fpocket")
+    checks.append(_chk(
+        "fpocket", "software",
+        "ok" if fpocket_bin else "warning",
+        fpocket_bin or "not found",
+        "Install fpocket: https://github.com/Discngine/fpocket" if not fpocket_bin else None,
+    ))
+
+    ag4_bin = shutil.which("autogrid4")
+    checks.append(_chk(
+        "AutoGrid4", "software",
+        "ok" if ag4_bin else "warning",
+        ag4_bin or "not found",
+        "Install AutoDock4/AutoGrid4 and add to PATH." if not ag4_bin else None,
+    ))
+
+    _autodock_env = os.environ.get("AUTODOCK_GPU_BIN", "")
+    autodock_bin  = _find_binary(
+        "autodock-gpu", "autodock_gpu",
+        fallback_paths=[
+            _autodock_env,
+            "/nfs/chemlink/software/autodock-gpu/bin/autodock-gpu",
+            "/usr/local/bin/autodock-gpu",
+        ],
+    )
+    checks.append(_chk(
+        "AutoDock-GPU", "software",
+        "ok" if autodock_bin else "warning",
+        autodock_bin or "not found",
+        "Install AutoDock-GPU or set AUTODOCK_GPU_BIN=/path/to/binary." if not autodock_bin else None,
+    ))
+
+    acpype_bin = shutil.which("acpype")
+    checks.append(_chk(
+        "acpype", "software",
+        "ok" if acpype_bin else "warning",
+        acpype_bin or "not found",
+        "pip install acpype" if not acpype_bin else None,
+    ))
+
+    # -- hardware ---------------------------------------------------------------
+
+    hw = get_hardware_profile()
+
+    if hw.has_gpu:
+        gpu_detail = "  ".join(
+            f"GPU {g.index}: {g.name} ({g.memory_total_gb} GB, {g.memory_free_gb} GB free)"
+            for g in hw.gpus
+        )
+        if len(hw.gpus) > 1:
+            gpu_detail = f"{hw.gpu_count} GPUs — " + gpu_detail
+        checks.append(_chk("GPU (NVIDIA)", "hardware", "ok", gpu_detail))
+    else:
+        checks.append(_chk(
+            "GPU (NVIDIA)", "hardware", "warning",
+            "nvidia-smi not available — MD and docking will run on CPU.",
+            "Install NVIDIA drivers and nvidia-smi, or accept CPU-only execution.",
+        ))
+
+    ram_ok = hw.ram_total_gb >= 8.0
+    ram_detail = (
+        f"{hw.ram_total_gb} GB total · {hw.ram_available_gb} GB available"
+        if hw.ram_total_gb > 0 else "unavailable"
+    )
+    checks.append(_chk(
+        "RAM", "hardware",
+        "ok" if ram_ok else "warning",
+        ram_detail,
+        "Free memory or add RAM; recommended ≥ 8 GB for MD simulations." if not ram_ok else None,
+    ))
+
+    cpu_detail = (
+        f"{hw.cpu_cores} cores · {hw.cpu_threads} threads"
+        if hw.cpu_cores else "unavailable"
+    )
+    checks.append(_chk("CPU", "hardware", "ok", cpu_detail))
+
+    # -- config / env -----------------------------------------------------------
+
+    autodock_env_set = bool(_autodock_env)
+    checks.append(_chk(
+        "AUTODOCK_GPU_BIN", "config",
+        "ok" if autodock_env_set else "warning",
+        _autodock_env if autodock_env_set else "not set (using PATH + fallback locations)",
+        f"export AUTODOCK_GPU_BIN={autodock_bin or '/path/to/autodock-gpu'}" if not autodock_env_set else None,
+    ))
+
+    gmxlib = os.environ.get("GMXLIB", "")
+    checks.append(_chk(
+        "GMXLIB", "config", "ok",
+        gmxlib if gmxlib else "not set (GROMACS uses built-in force fields)",
+    ))
+
+    slurm_job = os.environ.get("SLURM_JOB_ID", "")
+    checks.append(_chk(
+        "SLURM_JOB_ID", "config", "ok",
+        f"running inside SLURM job {slurm_job}" if slurm_job else "not set (running locally)",
+    ))
+
+    # -- paths ------------------------------------------------------------------
+
+    for rel_path, label in [
+        ("data/input/receptors", "Receptor inputs"),
+        ("data/input/ligands",   "Ligand inputs"),
+        ("data/input/dynamics",  "Dynamics inputs"),
+    ]:
+        abs_path = os.path.abspath(rel_path)
+        exists   = os.path.isdir(abs_path)
+        checks.append(_chk(
+            label, "paths",
+            "ok" if exists else "warning",
+            abs_path if exists else f"{abs_path}  (not found)",
+            f"mkdir -p {rel_path}" if not exists else None,
+        ))
+
+    out_abs = os.path.abspath("data/output")
+    if os.path.exists(out_abs):
+        writable = os.access(out_abs, os.W_OK)
+        checks.append(_chk(
+            "Output directory", "paths",
+            "ok" if writable else "error",
+            f"{out_abs}  ({'writable' if writable else 'NOT writable'})",
+            f"chmod 755 {out_abs}" if not writable else None,
+        ))
+    else:
+        checks.append(_chk(
+            "Output directory", "paths", "warning",
+            f"{out_abs}  (not found — will be created on first run)",
+            "mkdir -p data/output",
+        ))
+
+    # ── summary counts ─────────────────────────────────────────────────────────
+
+    n_ok     = sum(1 for c in checks if c["level"] == "ok")
+    n_warn   = sum(1 for c in checks if c["level"] == "warning")
+    n_errors = sum(1 for c in checks if c["level"] == "error")
+
+    # ── JSON output ────────────────────────────────────────────────────────────
+
+    if getattr(args, "json", False):
+        payload = {
+            "doctor_version":   DOCTOR_VERSION,
+            "chemlink_version": VERSION,
+            "timestamp":        datetime.utcnow().isoformat() + "Z",
+            "summary":          {"ok": n_ok, "warnings": n_warn, "errors": n_errors},
+            "checks":           checks,
+        }
+        print(json.dumps(payload, indent=2))
+        return 1 if n_errors else 0
+
+    # ── Rich display ───────────────────────────────────────────────────────────
+
+    _CAT_TITLES = {
+        "software": "Software & Tools",
+        "hardware": "Hardware",
+        "config":   "Config & Environment",
+        "paths":    "Paths",
+    }
+    _LEVEL_CELL = {
+        "ok":      "[bold green]✓  OK[/]",
+        "warning": "[bold yellow]⚠  Warning[/]",
+        "error":   "[bold red]✗  Error[/]",
+    }
+
+    console.print()
+    for cat in ("software", "hardware", "config", "paths"):
+        cat_checks = [c for c in checks if c["cat"] == cat]
+        if not cat_checks:
+            continue
+        t = Table(
+            title=f"[bold cyan]{_CAT_TITLES[cat]}[/]",
+            box=rich_box.ROUNDED,
+            border_style="cyan",
+            header_style="bold cyan",
+        )
+        t.add_column("Item",   style="bold")
+        t.add_column("Status", justify="center")
+        t.add_column("Detail", style="dim")
+        for c in cat_checks:
+            t.add_row(c["name"], _LEVEL_CELL[c["level"]], c["detail"])
+        console.print(t)
+        console.print()
+
+    # Issues + suggestions block
+    issues = [c for c in checks if c["level"] in ("error", "warning")]
+    if issues:
+        console.rule("[bold yellow]Issues & Suggestions[/]", style="yellow")
+        console.print()
+        for c in issues:
+            prefix = "[bold red]✗[/]" if c["level"] == "error" else "[bold yellow]⚠[/]"
+            console.print(f"  {prefix}  [bold]{c['name']}[/]  —  {c['detail']}")
+            if c["suggestion"]:
+                console.print(f"     [dim]→[/]  [cyan]{c['suggestion']}[/]")
+        console.print()
+
+    # Summary line
+    if n_errors == 0 and n_warn == 0:
+        print_ok(f"All {len(checks)} checks passed.")
+    elif n_errors == 0:
+        print_warn(f"{n_warn} warning(s) — no blockers.")
+    else:
+        print_err(f"{n_errors} error(s), {n_warn} warning(s).")
+
+    console.print(
+        f"  [dim]Doctor version: {DOCTOR_VERSION} · ChemLink: {VERSION}[/]\n"
+    )
+    return 1 if n_errors else 0
+
+
+# ── HPC command handler ────────────────────────────────────────────────────────
+
+def _auto_batch_size(n_ligands: int) -> int:
+    if n_ligands <= 100:
+        return n_ligands
+    if n_ligands <= 500:
+        return 100
+    if n_ligands <= 2000:
+        return 200
+    return 500
+
+
+def _run_hpc_docking(args: Namespace) -> int:
+    import glob
+
+    ligand_dir = args.ligand_dir
+    exts = ("*.sdf", "*.mol2", "*.pdb", "*.mol", "*.pdbqt")
+    ligand_files = []
+    for ext in exts:
+        ligand_files.extend(glob.glob(os.path.join(ligand_dir, ext)))
+    n_ligands = len(ligand_files)
+
+    if n_ligands == 0 and not args.dry_run:
+        err_console.print(
+            f"\n[bold red]Error:[/] No ligand files found in [cyan]{ligand_dir}[/]\n"
+            f"  Supported formats: {', '.join(e.lstrip('*') for e in exts)}\n"
+        )
+        return 1
+
+    manual_center = getattr(args, "manual_center", None)
+    manual_npts   = getattr(args, "manual_npts",   None)
+    if (manual_center is None) != (manual_npts is None):
+        err_console.print(
+            "[bold red]Error:[/] --manual-center and --manual-npts must be used together."
+        )
+        return 1
+
+    batch_size = args.batch_size if args.batch_size else _auto_batch_size(max(n_ligands, 1))
+    total_batches = max(1, (n_ligands + batch_size - 1) // batch_size) if n_ligands else 1
+    prep_tasks    = args.prep_tasks
+    array_range   = f"0-{prep_tasks - 1}"
+
+    if total_batches > 100:
+        print_warn(
+            f"{total_batches} docking batches will be submitted. "
+            "Consider increasing --batch-size to reduce queue pressure."
+        )
+
+    mode = args.mode
+    script_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "hpc", "slurm", mode, "run_multinode_pipeline.sh",
+    )
+
+    env_overrides: dict = {
+        "INPUT_LIGANDS_DIR":        ligand_dir,
+        "INPUT_RECEPTORS_DIR":      args.receptor_dir,
+        "BATCH_SIZE":               str(batch_size),
+        "MAX_GPU_CONCURRENCY":      str(args.max_gpu_concurrency),
+        "PREP_ARRAY_RANGE":         array_range,
+        "RECEPTOR_WORKERS":         str(args.receptor_workers),
+        "LIGAND_WORKERS":           str(args.ligand_workers),
+        "ACTIVE_SITE_WORKERS":      str(args.active_site_workers),
+        "DOCKING_WORKERS":          str(args.docking_workers),
+    }
+    if args.partition:
+        env_overrides["SLURM_PARTITION"] = args.partition
+    if args.gres:
+        env_overrides["DOCKING_GRES"] = args.gres
+    if args.nodes:
+        env_overrides["SLURM_NODELIST"] = args.nodes
+    if mode == "container" and args.container_image:
+        env_overrides["CONTAINER_IMAGE"] = args.container_image
+    if manual_center:
+        env_overrides["MANUAL_CENTER"] = " ".join(f"{v:g}" for v in manual_center)
+        env_overrides["MANUAL_NPTS"]   = " ".join(str(v)    for v in manual_npts)
+
+    t = Table(
+        title="[bold cyan]HPC Docking Configuration[/]",
+        box=rich_box.ROUNDED,
+        border_style="cyan",
+        show_header=False,
+        min_width=48,
+    )
+    t.add_column(style="dim",  no_wrap=True)
+    t.add_column(style="bold")
+    t.add_row("Mode",               mode)
+    t.add_row("Ligand directory",   ligand_dir)
+    t.add_row("Receptor directory", args.receptor_dir)
+    t.add_row("Ligands detected",   str(n_ligands) if n_ligands else "0  (dry-run)")
+    t.add_row("Batch size",         str(batch_size))
+    t.add_row("Total batches",      str(total_batches))
+    t.add_row("Prep array",         array_range)
+    t.add_row("Max GPU concurrency",str(args.max_gpu_concurrency))
+    t.add_row("Receptor workers",   str(args.receptor_workers))
+    t.add_row("Ligand workers",     str(args.ligand_workers))
+    t.add_row("Active-site workers",str(args.active_site_workers))
+    t.add_row("Docking workers",    str(args.docking_workers))
+    if manual_center:
+        t.add_row("Grid center (manual)", " ".join(f"{v:g}" for v in manual_center))
+        t.add_row("Grid npts (manual)",   " ".join(str(v)    for v in manual_npts))
+    if args.partition:
+        t.add_row("SLURM partition", args.partition)
+    if args.gres:
+        t.add_row("GRES",            args.gres)
+    if args.nodes:
+        t.add_row("Nodes",           args.nodes)
+    if mode == "container" and args.container_image:
+        t.add_row("Container image", args.container_image)
+    console.print()
+    console.print(t)
+    console.print()
+
+    if args.dry_run:
+        console.print("[bold yellow]Dry-run mode — command that would be executed:[/]")
+        env_str = " ".join(f"{k}={v}" for k, v in env_overrides.items())
+        console.print(f"  [dim]{env_str}[/]")
+        console.print(f"  [cyan]bash {script_path}[/]\n")
+        return 0
+
+    if not os.path.isfile(script_path):
+        err_console.print(
+            f"\n[bold red]Error:[/] Pipeline script not found: [cyan]{script_path}[/]\n"
+        )
+        return 1
+
+    env = {**os.environ, **env_overrides}
+    result = subprocess.run(["bash", script_path], env=env)
+    return result.returncode
+
+
+# ── HPC Dynamics command handler ──────────────────────────────────────────────
+
+def _count_pdb_atoms(pdb_path: str) -> int:
+    try:
+        count = 0
+        with open(pdb_path) as fh:
+            for line in fh:
+                if line.startswith(("ATOM  ", "HETATM")):
+                    count += 1
+        return count
+    except OSError:
+        return 0
+
+
+def _run_hpc_dynamics(args: Namespace) -> int:
+    import glob as _glob
+    import time as _time
+
+    try:
+        from ..pipelines.dynamics.utils import setup_work_directory
+    except ImportError:
+        try:
+            from chemlink.pipelines.dynamics.utils import setup_work_directory  # type: ignore
+        except ImportError:
+            from pipelines.dynamics.utils import setup_work_directory  # type: ignore
+
+    try:
+        from ..hpc.cluster.network_detector import get_multinode_recommendation
+    except ImportError:
+        try:
+            from hpc.cluster.network_detector import get_multinode_recommendation  # type: ignore
+        except ImportError:
+            from chemlink.hpc.cluster.network_detector import get_multinode_recommendation  # type: ignore
+
+    dyn_type = args.dyn_type
+    sim_id, label, min_files = _DYN_SPEC[dyn_type]
+
+    # --- Build per-simulation input file lists ---
+    # Resolve each path: use as-is if it exists, otherwise look in data/input/dynamics/
+    # Always convert to absolute paths so SLURM workers find them from any cwd.
+    def _resolve_hpc_file(f: str) -> str:
+        if os.path.isabs(f) or os.path.exists(f):
+            return os.path.abspath(f)
+        candidate = os.path.join("data/input/dynamics", f)
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+        return os.path.abspath(f)  # keep original so GROMACS reports correct missing path
+
+    sim_input_sets: list[list[str]] = []
+
+    if dyn_type == "pligand" and args.protein_file and args.ligand_files:
+        for lig in args.ligand_files:
+            sim_input_sets.append([
+                _resolve_hpc_file(args.protein_file),
+                _resolve_hpc_file(lig),
+            ])
+    else:
+        all_files = [_resolve_hpc_file(f) for f in (args.input_files or [])]
+        if len(all_files) < min_files:
+            needed = ", ".join(_DYN_FILE_LABELS[dyn_type])
+            err_console.print(
+                f"\n[bold red]Error:[/] '{dyn_type}' requires {min_files} file(s): {needed}\n"
+                f"  Got {len(all_files)}. Use [cyan]-i FILE[/] or [cyan]--protein/--ligands[/].\n"
+            )
+            return 1
+        sim_input_sets.append(all_files)
+
+    n_nodes = len(args.nodes.split(",")) if args.nodes else 1
+
+    # --mpi: single job spanning all nodes — warn and fall back if only 1 node
+    use_mpi = getattr(args, "mpi", False) and n_nodes > 1
+    if getattr(args, "mpi", False) and not use_mpi:
+        print_warn("--mpi requires --nodes with more than one node; falling back to normal mode.")
+
+    if use_mpi:
+        # Force a single simulation config — MPI handles parallelism internally
+        n_sims = 1
+        sim_input_sets = sim_input_sets[:1]
+    else:
+        # --replicate: submit the same single simulation to every node in --nodes
+        if getattr(args, "replicate", False) and n_nodes > 1 and len(sim_input_sets) == 1:
+            sim_input_sets = sim_input_sets * n_nodes
+
+        n_sims = len(sim_input_sets)
+
+    # --- Estimate atom count from first simulation's first PDB ---
+    raw_atoms = _count_pdb_atoms(sim_input_sets[0][0]) if sim_input_sets else 0
+    estimated_atoms = max(raw_atoms * 10, 1)
+
+    rec = get_multinode_recommendation(estimated_atoms, n_nodes)
+    if rec["use_multinode"]:
+        print_info(f"Network: {rec['speed_gbps']:.0f} GbE — multi-node recommended")
+    else:
+        print_warn(f"Network: {rec['reason']}")
+
+    # --- Build per-simulation config dicts and write individual JSON files ---
+    timestamp = f"{datetime.now():%Y%m%dT%H%M%S}"
+    configs: list[dict] = []
+    node_list_for_label = args.nodes.split(",") if args.nodes else []
+    is_replicate = getattr(args, "replicate", False)
+
+    for idx, files in enumerate(sim_input_sets):
+        # When replicating, embed the node name in the dir so each replica
+        # gets its own work directory even within the same second.
+        if is_replicate and node_list_for_label:
+            node_tag = node_list_for_label[idx % len(node_list_for_label)]
+            work_dir = os.path.abspath(
+                os.path.join("data/output/dynamics",
+                             f"run_{dyn_type}_{timestamp}_{node_tag}")
+            )
+            os.makedirs(work_dir, exist_ok=True)
+        else:
+            work_dir = setup_work_directory("data/output/dynamics", dyn_type)
+        config: dict = {
+            "sim_type":       sim_id,
+            "sim_type_label": label,
+            "ns_time":        args.time,
+            "threads":        args.cpus,
+            "work_dir":       work_dir,
+        }
+
+        if dyn_type == "oprotein":
+            config["pdb_input"] = files[0]
+        elif dyn_type == "pligand":
+            config.update(pdb_input=files[0], ligand_pdb=files[1],
+                          ligand_charge=args.charge)
+        elif dyn_type in ("ppeptide", "pacid", "pprotein"):
+            config.update(pdb_protein=files[0], pdb_partner=files[1],
+                          pdb_input=os.path.join(work_dir, "complex.pdb"))
+        elif dyn_type == "ppligand":
+            config.update(pdb_protein=files[0], pdb_partner=files[1],
+                          pdb_input=os.path.join(work_dir, "complex.pdb"),
+                          ligand_pdb=files[2], ligand_charge=args.charge)
+
+        cfg_path = os.path.join(work_dir, "hpc_config.json")
+        config["_config_path"] = cfg_path
+        with open(cfg_path, "w") as fh:
+            json.dump(config, fh, indent=2)
+
+        configs.append(config)
+
+    master_json = f"/tmp/chemlink_dyn_configs_{timestamp}.json"
+    with open(master_json, "w") as fh:
+        json.dump(configs, fh, indent=2)
+
+    # --- Summary table ---
+    t = Table(
+        title="[bold cyan]HPC Dynamics Configuration[/]",
+        box=rich_box.ROUNDED,
+        border_style="cyan",
+        show_header=False,
+        min_width=52,
+    )
+    t.add_column(style="dim",  no_wrap=True)
+    t.add_column(style="bold")
+    t.add_row("Simulation type",   label)
+    t.add_row("Duration",          f"{args.time} ns")
+    t.add_row("Simulations",       str(n_sims))
+    t.add_row("CPUs per job",      str(args.cpus))
+    t.add_row("Memory per job",    args.mem)
+    t.add_row("Wall time",         args.time_limit)
+    t.add_row("Interconnect",      f"{rec['speed_gbps']:.0f} GbE")
+    if args.partition:
+        t.add_row("SLURM partition", args.partition)
+    if args.nodes:
+        t.add_row("Nodes",           args.nodes)
+    if use_mpi:
+        t.add_row("Mode", f"[bold magenta]MPI ({n_nodes} nodes)[/] — domain decomposition")
+    elif getattr(args, "replicate", False):
+        t.add_row("Mode",            f"[bold yellow]replicate[/bold yellow] — same sim on each node")
+    t.add_row("Config list",       master_json)
+    console.print()
+    console.print(t)
+    console.print()
+
+    if args.dry_run:
+        console.print("[bold yellow]Dry-run mode — jobs that would be submitted:[/]")
+        for i, cfg in enumerate(configs):
+            console.print(f"  Sim {i + 1}: [cyan]{cfg['work_dir']}[/]")
+        console.print()
+        return 0
+
+    _native_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "hpc", "slurm", "native",
+    )
+
+    if use_mpi:
+        # ── MPI path: submit one multi-node sbatch job directly ──────────────
+        mpi_slurm = os.path.join(_native_dir, "dynamics_mpi.slurm")
+        if not os.path.isfile(mpi_slurm):
+            err_console.print(
+                f"\n[bold red]Error:[/] MPI SLURM script not found: [cyan]{mpi_slurm}[/]\n"
+            )
+            return 1
+
+        cfg = configs[0]
+        sbatch_cmd = [
+            "sbatch",
+            f"--nodes={n_nodes}",
+            f"--ntasks={n_nodes}",
+            "--ntasks-per-node=1",
+        ]
+        if args.partition:
+            sbatch_cmd.append(f"--partition={args.partition}")
+        if args.nodes:
+            sbatch_cmd.append(f"--nodelist={args.nodes}")
+        sbatch_cmd += [
+            f"--time={args.time_limit}",
+            f"--mem={args.mem}",
+            f"--cpus-per-task={args.cpus}",
+            "--export=ALL,"
+            f"DYN_CONFIG_JSON={cfg['_config_path']},"
+            f"DYN_WORK_DIR={cfg['work_dir']},"
+            f"DYN_TIME_LIMIT={args.time_limit}",
+            mpi_slurm,
+        ]
+        result = subprocess.run(sbatch_cmd)
+
+        rt = Table(
+            title="[bold cyan]Submitted MPI Job[/]",
+            box=rich_box.ROUNDED,
+            border_style="cyan",
+            header_style="bold cyan",
+            min_width=60,
+        )
+        rt.add_column("#",        style="dim",  justify="right")
+        rt.add_column("Type",     style="bold")
+        rt.add_column("Mode",     style="magenta")
+        rt.add_column("Work dir", style="dim")
+        rt.add_row("1", label, f"MPI ({n_nodes} nodes)", cfg["work_dir"])
+
+        console.print()
+        console.print(rt)
+        console.print()
+        return result.returncode
+
+    else:
+        # ── Normal path: submit N independent jobs via shell script ──────────
+        script_path = os.path.join(_native_dir, "run_dynamics_pipeline.sh")
+
+        if not os.path.isfile(script_path):
+            err_console.print(
+                f"\n[bold red]Error:[/] Pipeline script not found: [cyan]{script_path}[/]\n"
+            )
+            return 1
+
+        env_overrides: dict = {
+            "DYN_TYPE":         dyn_type,
+            "DYN_NS_TIME":      str(args.time),
+            "DYN_CHARGE":       str(args.charge),
+            "DYN_CONFIGS_JSON": master_json,
+            "DYN_TIME_LIMIT":   args.time_limit,
+            "DYN_MEM":          args.mem,
+            "DYN_CPUS":         str(args.cpus),
+        }
+        if args.partition:
+            env_overrides["SLURM_PARTITION"] = args.partition
+        if args.nodes:
+            env_overrides["SLURM_NODELIST"] = args.nodes
+
+        env = {**os.environ, **env_overrides}
+        result = subprocess.run(["bash", script_path], env=env)
+
+        # --- Results table ---
+        rt = Table(
+            title="[bold cyan]Submitted Jobs[/]",
+            box=rich_box.ROUNDED,
+            border_style="cyan",
+            header_style="bold cyan",
+            min_width=60,
+        )
+        rt.add_column("#",         style="dim",  justify="right")
+        rt.add_column("Type",      style="bold")
+        rt.add_column("Work dir",  style="dim")
+        if args.nodes:
+            rt.add_column("Node", style="cyan")
+
+        node_list = args.nodes.split(",") if args.nodes else []
+        for i, cfg in enumerate(configs):
+            row = [str(i + 1), label, cfg["work_dir"]]
+            if args.nodes:
+                row.append(node_list[i % len(node_list)])
+            rt.add_row(*row)
+
+        console.print()
+        console.print(rt)
+        console.print()
+
+        return result.returncode
+
+
+# ── Shell completion ───────────────────────────────────────────────────────────
+
+_BASH_SCRIPT = """\
+# ChemLink bash completion
+# Add to ~/.bashrc:  source <(chemlink completion bash)
+
+_chemlink() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local cmd="${COMP_WORDS[1]}"
+    local sub="${COMP_WORDS[2]}"
+    local depth=$COMP_CWORD
+
+    case "$cmd" in
+        docking)
+            [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "prepare prep full flow run analyze analysis receptor ligand active-site" -- "$cur") );;
+        dynamic)
+            [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "oprotein pligand ppeptide pacid pprotein ppligand" -- "$cur") );;
+        completion)
+            [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "bash zsh fish install" -- "$cur") );;
+        doctor)
+            COMPREPLY=( $(compgen -W "--json" -- "$cur") );;
+        hpc)
+            [[ $depth -eq 2 ]] && COMPREPLY=( $(compgen -W "docking dynamics" -- "$cur") )
+            if [[ $depth -ge 3 && "$sub" == "docking" ]]; then
+                COMPREPLY=( $(compgen -W "--ligand-dir --receptor-dir --nodes --partition --gres --batch-size --prep-tasks --receptor-workers --ligand-workers --active-site-workers --docking-workers --max-gpu-concurrency --manual-center --manual-npts --mode --container-image --dry-run" -- "$cur") )
+            fi
+            if [[ $depth -ge 3 && "$sub" == "dynamics" ]]; then
+                COMPREPLY=( $(compgen -W "oprotein pligand ppeptide pacid pprotein ppligand --protein --ligands --time --charge --nodes --partition --time-limit --mem --cpus --dry-run" -- "$cur") )
+            fi;;
+        *)
+            COMPREPLY=( $(compgen -W "docking dynamic doctor completion hpc --help --version" -- "$cur") );;
+    esac
+}
+complete -F _chemlink chemlink
+"""
+
+_ZSH_SCRIPT = """\
+#compdef chemlink
+# ChemLink zsh completion
+# source <(chemlink completion zsh)
+
+# ── Styles (scoped to chemlink only) ─────────────────────────────────────────
+zstyle ':completion:*:chemlink:*:descriptions' format '%F{cyan}%B%d%b%f'
+zstyle ':completion:*:chemlink:*:messages'     format '%F{yellow}%d%f'
+zstyle ':completion:*:chemlink:*'              group-name ''
+zstyle ':completion:*:chemlink:*'              list-colors '=:=90'
+
+_chemlink() {
+    local -a top dock dyn shells hpccmds hpcdock hpcdyn
+
+    top=(
+        'docking:Molecular docking workflows'
+        'dynamic:Molecular dynamics simulations'
+        'hpc:Submit pipelines to SLURM cluster'
+        'doctor:Check environment and tool prerequisites'
+        'completion:Generate shell tab-completion scripts'
+    )
+    dock=(
+        'prepare:Preparation only  (receptor · ligand · active-site)'
+        'prep:Alias for prepare'
+        'full:Full pipeline  (preparation + execution + analysis)'
+        'flow:Run a contiguous subset of pipeline steps'
+        'run:Docking execution on already-prepared files'
+        'analyze:Analyze DLG results and generate reports'
+        'analysis:Alias for analyze'
+        'receptor:Prepare receptor PDB files to PDBQT'
+        'ligand:Prepare ligand files to PDBQT'
+        'active-site:Detect binding sites from PDBQT files'
+    )
+    dyn=(
+        'oprotein:Protein-only simulation'
+        'pligand:Protein + small-molecule ligand'
+        'ppeptide:Protein + peptide complex'
+        'pacid:Protein + nucleic acid complex'
+        'pprotein:Protein + protein complex'
+        'ppligand:Protein + protein + ligand/cofactor'
+    )
+    shells=(
+        'bash:Bash completion script'
+        'zsh:Zsh completion script'
+        'fish:Fish completion script'
+        'install:Auto-detect shell and install'
+    )
+    hpccmds=(
+        'docking:Submit full docking pipeline to SLURM'
+        'dynamics:Submit molecular dynamics simulations to SLURM'
+    )
+
+    case $words[2] in
+        docking)
+            (( CURRENT == 3 )) && _describe -t dock 'docking subcommand' dock
+            ;;
+        dynamic)
+            (( CURRENT == 3 )) && _describe -t dyn 'simulation type' dyn
+            ;;
+        completion)
+            (( CURRENT == 3 )) && _describe -t shells 'target shell' shells
+            ;;
+        doctor)
+            _arguments '--json[Output check results as JSON for CI]'
+            ;;
+        hpc)
+            if (( CURRENT == 3 )); then
+                _describe -t hpccmds 'hpc subcommand' hpccmds
+            elif (( CURRENT >= 4 )) && [[ $words[3] == docking ]]; then
+                _arguments \\
+                    '--ligand-dir[Ligand input directory]:dir:_files -/' \\
+                    '--receptor-dir[Receptor PDB directory]:dir:_files -/' \\
+                    '--nodes[SLURM nodelist]:nodelist:' \\
+                    '--partition[SLURM partition]:partition:' \\
+                    '--gres[SLURM generic resource (e.g. gpu\\:1)]:gres:' \\
+                    '--batch-size[Ligands per docking batch]:N:' \\
+                    '--prep-tasks[Array tasks for prep steps]:N:' \\
+                    '--receptor-workers[Workers per receptor-prep task]:N:' \\
+                    '--ligand-workers[Workers per ligand-prep task]:N:' \\
+                    '--active-site-workers[Workers for active-site detection]:N:' \\
+                    '--docking-workers[Workers per docking task]:N:' \\
+                    '--max-gpu-concurrency[Max concurrent docking tasks]:N:' \\
+                    '--mode[Script set to use]:mode:(native container)' \\
+                    '--container-image[Container image path]:image:_files' \\
+                    '--dry-run[Print config without submitting]'
+            elif (( CURRENT >= 4 )) && [[ $words[3] == dynamics ]]; then
+                _arguments \\
+                    ':simulation type:(oprotein pligand ppeptide pacid pprotein ppligand)' \\
+                    '-i[File inside data/input/dynamics]:file:_files' \\
+                    '--protein[Protein PDB file]:file:_files' \\
+                    '--ligands[Ligand PDB files]:file:_files' \\
+                    '--time[Simulation time in ns]:NS:' \\
+                    '--charge[Ligand net charge]:Q:' \\
+                    '--nodes[SLURM nodelist]:nodelist:' \\
+                    '--partition[SLURM partition]:partition:' \\
+                    '--time-limit[Wall time per job HH:MM:SS]:HH\\:MM\\:SS:' \\
+                    '--mem[Memory per job]:MEM:' \\
+                    '--cpus[CPUs per job]:N:' \\
+                    '--dry-run[Print config without submitting]'
+            fi
+            ;;
+        *)
+            _describe -t cmds 'command' top
+            ;;
+    esac
+}
+
+compdef _chemlink chemlink
+"""
+
+
+def _run_completion(args: Namespace) -> int:
+    shell = args.shell
+    if shell == "bash":
+        print(_BASH_SCRIPT)
+    elif shell == "zsh":
+        print(_ZSH_SCRIPT)
+    elif shell == "fish":
+        err_console.print("[yellow]Fish completion is not yet available. Use bash or zsh.[/]")
+        return 1
+    elif shell == "install":
+        _install_completion()
+    return 0
+
+
+def _install_completion() -> None:
+    shell_bin = os.environ.get("SHELL", "")
+    is_zsh    = "zsh" in shell_bin
+    rc        = os.path.expanduser("~/.zshrc" if is_zsh else "~/.bashrc")
+    line      = f'source <(chemlink completion {"zsh" if is_zsh else "bash"})'
+    print_info(f"Appending completion hook to {rc}")
+    try:
+        with open(rc, "a") as fh:
+            fh.write(f"\n# ChemLink autocompletion\n{line}\n")
+        print_ok(f"Done. Restart your shell or run:  [cyan]source {rc}[/]")
+    except OSError as exc:
+        print_err(f"Could not write to {rc}: {exc}")
+
+
+# ── Argument parser ────────────────────────────────────────────────────────────
+
+def _common_pipeline_args(p: ArgumentParser) -> None:
+    p.add_argument("receptor_input_dir", nargs="?", default=_REC_IN, metavar="RECEPTOR_DIR",
+                   help=f"Receptor PDB directory  [{_REC_IN}]")
+    p.add_argument("ligand_input_dir", nargs="?", default=_LIG_IN, metavar="LIGAND_DIR",
+                   help=f"Ligand input directory  [{_LIG_IN}]")
+    p.add_argument("output_dir", nargs="?", default=_OUT, metavar="OUTPUT_DIR",
+                   help=f"Base output directory  [{_OUT}]")
+    p.add_argument("--mgltools-path", "--mgltools", dest="mgltools_path", metavar="PATH",
+                   help="MGLTools installation path")
+    p.add_argument("--fpocket-path", "--fpocket", dest="fpocket_path", metavar="PATH",
+                   help="fpocket binary path")
+    p.add_argument("--manual-center", nargs=3, type=float, metavar=("X", "Y", "Z"),
+                   help="Manual grid center  (requires --manual-npts)")
+    p.add_argument("--manual-npts", nargs=3, type=int, metavar=("NX", "NY", "NZ"),
+                   help="Manual AutoDock grid dimensions  (requires --manual-center)")
+    p.add_argument("--receptor-workers", "-r", type=int, metavar="N",
+                   help="Parallel workers for receptor preparation")
+    p.add_argument("--ligand-workers", "-l", type=int, metavar="N",
+                   help="Parallel workers for ligand preparation")
+    p.add_argument("--active-site-workers", "-a", type=int, metavar="N",
+                   help="Parallel workers for active-site detection")
+
+
+def _exec_args(p: ArgumentParser) -> None:
+    p.add_argument("--docking-workers", "-d", type=int, default=1, metavar="N",
+                   help="Parallel workers for docking execution  [1]")
+    p.add_argument("--autogrid-executable", "--autogrid", dest="autogrid_executable", metavar="EXE",
+                   help="AutoGrid4 executable path or name")
+    p.add_argument("--autodock-gpu-executable", "--autodock", dest="autodock_gpu_executable", metavar="EXE",
+                   help="AutoDock-GPU executable path or name")
+    p.add_argument("--pdb-export-limit", type=int, default=10, metavar="N",
+                   help="Top candidates to export as PDB  [10]")
+    p.add_argument("--max-workers", type=int, default=4, metavar="N",
+                   help="Max parallel threads for PDB export  [4]")
+
+
+def _step_range_args(p: ArgumentParser) -> None:
+    choices_str = " | ".join(PIPELINE_STEPS)
+    p.add_argument("--from-step", choices=PIPELINE_STEPS, default="receptor", metavar="STEP",
+                   help=f"First pipeline step  [receptor]  ({choices_str})")
+    p.add_argument("--to-step", choices=PIPELINE_STEPS, default="analysis", metavar="STEP",
+                   help=f"Last pipeline step   [analysis]  ({choices_str})")
+
+
+def _dyn_parent() -> ArgumentParser:
+    p = ArgumentParser(add_help=False)
+    p.add_argument("-i", "--input-dir", action="append", dest="input_files", metavar="FILE",
+                   help="File inside data/input/dynamics  (repeatable)")
+    p.add_argument("files", nargs="*", metavar="PATH",
+                   help="Absolute or relative file paths")
+    p.add_argument("-t", "--time", type=float, default=0.1, metavar="NS",
+                   help="Simulation time in nanoseconds  [0.1]")
+    return p
+
+
+def build_parser() -> _Parser:
+    epilog = (
+        f"\n  {bold('Quick examples:')}\n"
+        f"    {cyan('chemlink docking prepare')}  data/receptors  data/ligands\n"
+        f"    {cyan('chemlink docking full')}     data/receptors  data/ligands\n"
+        f"    {cyan('chemlink dynamic oprotein')} -i protein.pdb  -t 0.5\n"
+        f"    {cyan('chemlink dynamic pligand')}  -i prot.pdb -i lig.pdbqt -c 0\n"
+        f"    {cyan('chemlink doctor')}\n"
+        f"    {cyan('chemlink completion bash')}  >> ~/.bashrc  &&  source ~/.bashrc\n"
+    )
+
+    parser = _Parser(
+        prog="chemlink",
+        formatter_class=_Fmt,
+        epilog=epilog,
+    )
+    parser.add_argument("--version", "-V", action="version", version=f"chemlink {VERSION}")
+
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    # ── docking ────────────────────────────────────────────────────────────────
+    dock_desc = (
+        f"  {bold_cyan('docking')}  — Run molecular docking pipelines.\n\n"
+        f"  Pipeline steps (in order):\n"
+        f"    {cyan('receptor')}  →  {cyan('ligand')}  →  {cyan('active-site')}  "
+        f"→  {cyan('execution')}  →  {cyan('analysis')}"
+    )
+    dock = sub.add_parser("docking", help="Molecular docking workflows",
+                          description=dock_desc, formatter_class=_Fmt)
+    dock_sub = dock.add_subparsers(dest="docking_command", metavar="SUBCOMMAND")
+
+    prep = dock_sub.add_parser("prepare", aliases=["prep"], formatter_class=_Fmt,
+                               help="Preparation only  (receptor + ligand + active-site)")
+    _common_pipeline_args(prep)
+    prep.set_defaults(handler=lambda a: _run_docking_pipeline(a, full=False))
+
+    full_p = dock_sub.add_parser("full", formatter_class=_Fmt,
+                                 help="Full pipeline  (preparation + execution + analysis)")
+    _common_pipeline_args(full_p)
+    _exec_args(full_p)
+    full_p.set_defaults(handler=lambda a: _run_docking_pipeline(a, full=True))
+
+    flow_p = dock_sub.add_parser("flow", formatter_class=_Fmt,
+                                 help="Run any contiguous subset of pipeline steps")
+    _common_pipeline_args(flow_p)
+    _exec_args(flow_p)
+    _step_range_args(flow_p)
+    flow_p.set_defaults(handler=_run_docking_flow)
+
+    run_p = dock_sub.add_parser("run", formatter_class=_Fmt,
+                                help="Docking execution on already-prepared files")
+    run_p.add_argument("prepared_receptors_dir", nargs="?", default=_REC_OUT, metavar="RECEPTOR_DIR",
+                       help=f"Directory with .maps.fld files  [{_REC_OUT}]")
+    run_p.add_argument("prepared_ligands_dir", nargs="?", default=_LIG_OUT, metavar="LIGAND_DIR",
+                       help=f"Directory with prepared ligands  [{_LIG_OUT}]")
+    run_p.add_argument("output_dir", nargs="?", default=_OUT, metavar="OUTPUT_DIR",
+                       help=f"Base output directory  [{_OUT}]")
+    run_p.add_argument("--workers", "-w", type=int, default=1, metavar="N",
+                       help="Parallel workers  [1]")
+    run_p.add_argument("--autogrid-executable", "--autogrid", dest="autogrid_executable", metavar="EXE")
+    run_p.add_argument("--autodock-gpu-executable", "--autodock", dest="autodock_gpu_executable", metavar="EXE")
+    run_p.set_defaults(handler=_run_docking_execution)
+
+    ana_p = dock_sub.add_parser("analyze", aliases=["analysis"], formatter_class=_Fmt,
+                                help="Analyze DLG results and generate reports")
+    ana_p.add_argument("output_dir", help="Base output directory")
+    ana_p.add_argument("--pdb-export-limit", type=int, default=10, metavar="N",
+                       help="Top candidates to export as PDB  [10]")
+    ana_p.add_argument("--max-workers", type=int, default=4, metavar="N",
+                       help="Max threads for PDB export  [4]")
+    ana_p.set_defaults(handler=_run_docking_analysis)
+
+    rec_p = dock_sub.add_parser("receptor", formatter_class=_Fmt,
+                                help="Prepare receptor PDB files to PDBQT format")
+    rec_p.add_argument("input_dir", nargs="?", default=_REC_IN, metavar="INPUT_DIR",
+                       help=f"Receptor PDB directory  [{_REC_IN}]")
+    rec_p.add_argument("output_dir", nargs="?", default="data/input", metavar="OUTPUT_DIR",
+                       help="Output base directory  [data/input]")
+    rec_p.add_argument("--mgltools-path", "--mgltools", dest="mgltools_path", metavar="PATH",
+                       help="MGLTools installation path")
+    rec_p.add_argument("--workers", "-w", type=int, default=1, metavar="N",
+                       help="Parallel workers  [1]")
+    rec_p.set_defaults(handler=_run_receptor_preparation)
+
+    lig_p = dock_sub.add_parser("ligand", formatter_class=_Fmt,
+                                help="Prepare ligand files to PDBQT format")
+    lig_p.add_argument("input_dir", nargs="?", default=_LIG_IN, metavar="INPUT_DIR",
+                       help=f"Ligand input directory  [{_LIG_IN}]")
+    lig_p.add_argument("output_dir", nargs="?", default="data/input", metavar="OUTPUT_DIR",
+                       help="Output base directory  [data/input]")
+    lig_p.add_argument("--workers", "-w", type=int, default=1, metavar="N",
+                       help="Parallel workers  [1]")
+    lig_p.set_defaults(handler=_run_ligand_preparation)
+
+    as_p = dock_sub.add_parser("active-site", formatter_class=_Fmt,
+                               help="Detect binding sites from prepared PDBQT files")
+    as_p.add_argument("receptor_dir", nargs="?", default=_REC_OUT, metavar="RECEPTOR_DIR",
+                      help=f"Prepared receptors directory  [{_REC_OUT}]")
+    as_p.add_argument("ligand_dir", nargs="?", default=_LIG_OUT, metavar="LIGAND_DIR",
+                      help=f"Prepared ligands directory  [{_LIG_OUT}]")
+    as_p.add_argument("output_dir", nargs="?", default=_OUT, metavar="OUTPUT_DIR",
+                      help=f"Base output directory  [{_OUT}]")
+    as_p.add_argument("--mgltools-path", "--mgltools", dest="mgltools_path", metavar="PATH",
+                      help="MGLTools installation path")
+    as_p.add_argument("--fpocket-path", "--fpocket", dest="fpocket_path", metavar="PATH",
+                      help="fpocket binary path")
+    as_p.add_argument("--workers", "-w", type=int, default=1, metavar="N",
+                      help="Parallel workers  [1]")
+    as_p.add_argument("--manual-center", nargs=3, type=float, metavar=("X", "Y", "Z"),
+                      help="Manual grid center  (requires --manual-npts)")
+    as_p.add_argument("--manual-npts", nargs=3, type=int, metavar=("NX", "NY", "NZ"),
+                      help="Manual AutoDock grid dimensions  (requires --manual-center)")
+    as_p.set_defaults(handler=_run_active_site)
+
+    # ── dynamic ────────────────────────────────────────────────────────────────
+    dyn_desc = (
+        f"  {bold_cyan('dynamic')}  — Run GROMACS-based molecular dynamics simulations.\n\n"
+        f"  Simulation types:\n\n"
+        f"    {cyan('oprotein')}   Protein only\n"
+        f"               Full simulation and analysis flow.\n\n"
+        f"    {cyan('pligand')}    Protein + small-molecule ligand  (requires {bold('-c')} charge)\n"
+        f"               Adds ligand topology analysis; exclusive energy analysis.\n\n"
+        f"    {cyan('ppeptide')}   Protein + peptide\n"
+        f"               Assembles complex first; exclusive energy interaction analysis.\n\n"
+        f"    {cyan('pacid')}      Protein + nucleic acid\n"
+        f"               Assembles complex first; RMSD and DNA structural fitting analysis.\n\n"
+        f"    {cyan('pprotein')}   Protein + protein\n"
+        f"               Assembles complex first; exclusive energy interaction analysis.\n\n"
+        f"    {cyan('ppligand')}   Protein + protein + ligand  (requires {bold('-c')} charge)\n"
+        f"               Combines pligand + pprotein steps; exclusive combined analysis."
+    )
+    parent = _dyn_parent()
+    dyn = sub.add_parser("dynamic", help="Molecular dynamics simulations",
+                         description=dyn_desc, formatter_class=_Fmt)
+    dyn_sub = dyn.add_subparsers(dest="dyn_type", metavar="TYPE")
+
+    _dyn_types = [
+        (
+            "oprotein",
+            "Protein-only simulation",
+            (
+                f"  {bold_cyan('oprotein')}  — Protein-only GROMACS simulation.\n\n"
+                f"  Runs the full simulation and analysis flow for a single protein structure.\n"
+                f"  Input: 1 PDB file."
+            ),
+            False,
+        ),
+        (
+            "pligand",
+            "Protein + small-molecule ligand  (requires -c)",
+            (
+                f"  {bold_cyan('pligand')}  — Protein + small-molecule ligand simulation.\n\n"
+                f"  Extends the general flow with a ligand topology analysis step.\n"
+                f"  The energy analysis includes exclusive modifications for protein-ligand systems.\n"
+                f"  Input: 2 files  (protein PDB, ligand PDBQT).  {bold('Ligand net charge required')} ({cyan('-c')})."
+            ),
+            True,
+        ),
+        (
+            "ppeptide",
+            "Protein + peptide complex",
+            (
+                f"  {bold_cyan('ppeptide')}  — Protein + peptide complex simulation.\n\n"
+                f"  The two structures are merged into a complex before the simulation starts.\n"
+                f"  Post-processing adapts labels specific to peptide systems.\n"
+                f"  Analysis includes an exclusive energy interaction study.\n"
+                f"  Input: 2 PDB files  (protein, peptide)."
+            ),
+            False,
+        ),
+        (
+            "pacid",
+            "Protein + nucleic acid complex",
+            (
+                f"  {bold_cyan('pacid')}  — Protein + nucleic acid complex simulation.\n\n"
+                f"  The two structures are merged into a complex before the simulation starts.\n"
+                f"  Post-processing adapts labels specific to nucleic acid systems.\n"
+                f"  Analysis shows RMSD structural variation and DNA conformational fitting plots.\n"
+                f"  Input: 2 PDB files  (protein, nucleic acid)."
+            ),
+            False,
+        ),
+        (
+            "pprotein",
+            "Protein + protein complex",
+            (
+                f"  {bold_cyan('pprotein')}  — Protein + protein complex simulation.\n\n"
+                f"  The two structures are merged into a complex before the simulation starts.\n"
+                f"  Post-processing adapts labels specific to protein-protein systems.\n"
+                f"  Analysis includes an exclusive energy interaction study.\n"
+                f"  Input: 2 PDB files  (protein 1, protein 2)."
+            ),
+            False,
+        ),
+        (
+            "ppligand",
+            "Protein + protein + ligand  (requires -c)",
+            (
+                f"  {bold_cyan('ppligand')}  — Protein + protein + ligand/cofactor simulation.\n\n"
+                f"  Combines the steps of {cyan('pligand')} and {cyan('pprotein')}:\n"
+                f"  the two proteins are merged into a complex, ligand topology is analysed,\n"
+                f"  and the final analysis runs the exclusive combined protocol for this system.\n"
+                f"  Input: 3 files  (protein 1 PDB, protein 2 PDB, ligand PDBQT).  "
+                f"{bold('Ligand net charge required')} ({cyan('-c')})."
+            ),
+            True,
+        ),
+    ]
+
+    for name, help_text, desc, needs_charge in _dyn_types:
+        dp = dyn_sub.add_parser(name, help=help_text, description=desc,
+                                parents=[parent], formatter_class=_Fmt)
+        if needs_charge:
+            dp.add_argument("-c", "--charge", type=int, required=True, metavar="Q",
+                            help="Net charge of the ligand (required)")
+        dp.set_defaults(handler=_run_dynamic, dyn_type=name)
+
+    # ── doctor ─────────────────────────────────────────────────────────────────
+    doc = sub.add_parser("doctor", formatter_class=_Fmt,
+                         help="Check environment and tool prerequisites")
+    doc.add_argument(
+        "--json", action="store_true", default=False,
+        help=f"Output results as JSON (doctor version: {DOCTOR_VERSION})",
+    )
+    doc.set_defaults(handler=_run_doctor)
+
+    # ── completion ─────────────────────────────────────────────────────────────
+    comp_desc = (
+        f"  {bold_cyan('completion')}  — Generate shell tab-completion scripts.\n\n"
+        f"  Quick setup:\n"
+        f"    bash  →  {cyan('source <(chemlink completion bash)')}\n"
+        f"    zsh   →  {cyan('source <(chemlink completion zsh)')}\n"
+        f"    auto  →  {cyan('chemlink completion install')}  (appends to your shell rc)"
+    )
+    comp = sub.add_parser("completion", help="Generate shell tab-completion scripts",
+                          description=comp_desc, formatter_class=_Fmt)
+    comp.add_argument("shell", choices=["bash", "zsh", "fish", "install"], metavar="SHELL",
+                      help="Target shell: bash · zsh · fish · install (auto-detect)")
+    comp.set_defaults(handler=_run_completion)
+
+    # ── hpc ────────────────────────────────────────────────────────────────────
+    hpc_desc = (
+        f"  {bold_cyan('hpc')}  — Submit molecular docking to a SLURM cluster.\n\n"
+        f"  Automatically calculates batch size from ligand count,\n"
+        f"  shows a configuration summary, then submits the full\n"
+        f"  7-step pipeline (receptor prep → ligand prep → active-site\n"
+        f"  → make batches → docking array → merge → analysis)."
+    )
+    hpc = sub.add_parser("hpc", help="Submit pipelines to SLURM cluster",
+                         description=hpc_desc, formatter_class=_Fmt)
+    hpc_sub = hpc.add_subparsers(dest="hpc_command", metavar="SUBCOMMAND")
+
+    hpc_dock = hpc_sub.add_parser("docking", formatter_class=_Fmt,
+                                  help="Submit full docking pipeline to SLURM")
+    hpc_dock.add_argument("--ligand-dir", "--ligands", dest="ligand_dir",
+                          default="/nfs/chemlink/chemlink/data/input/ligands", metavar="DIR",
+                          help="Ligand input directory")
+    hpc_dock.add_argument("--receptor-dir", "--receptors", dest="receptor_dir",
+                          default="/nfs/chemlink/chemlink/data/input/receptors", metavar="DIR",
+                          help="Receptor PDB input directory")
+    hpc_dock.add_argument("--nodes", metavar="NODELIST",
+                          help="SLURM nodelist to restrict submission (e.g. node[01-04])")
+    hpc_dock.add_argument("--partition", metavar="PARTITION",
+                          help="SLURM partition to submit to")
+    hpc_dock.add_argument("--gres", metavar="GRES",
+                          help="SLURM generic resource (e.g. gpu:1)")
+    hpc_dock.add_argument("--batch-size", type=int, metavar="N",
+                          help="Ligands per docking batch  [auto: ≤100→all, ≤500→100, ≤2000→200, >2000→500]")
+    hpc_dock.add_argument("--prep-tasks", type=int, default=6, metavar="N",
+                          help="Number of array tasks for receptor/ligand prep  [6]")
+    hpc_dock.add_argument("--receptor-workers", type=int, default=4, metavar="N",
+                          help="Parallel workers per receptor-prep task  [4]")
+    hpc_dock.add_argument("--ligand-workers", type=int, default=8, metavar="N",
+                          help="Parallel workers per ligand-prep task  [8]")
+    hpc_dock.add_argument("--manual-center", nargs=3, type=float, metavar=("X", "Y", "Z"),
+                          help="Manual grid center in Å — skips fpocket  (requires --manual-npts)")
+    hpc_dock.add_argument("--manual-npts", nargs=3, type=int, metavar=("NX", "NY", "NZ"),
+                          help="Manual AutoDock grid dimensions  (requires --manual-center)")
+    hpc_dock.add_argument("--active-site-workers", type=int, default=4, metavar="N",
+                          help="Parallel workers for active-site detection  [4]")
+    hpc_dock.add_argument("--docking-workers", type=int, default=1, metavar="N",
+                          help="Parallel workers per docking task  [1]")
+    hpc_dock.add_argument("--max-gpu-concurrency", type=int, default=6, metavar="N",
+                          help="Max concurrent docking array tasks  [6]")
+    hpc_dock.add_argument("--mode", choices=["native", "container"], default="native",
+                          help="SLURM script set to use  [native]")
+    hpc_dock.add_argument("--container-image", metavar="IMAGE",
+                          help="Container image path (required when --mode=container)")
+    hpc_dock.add_argument("--dry-run", action="store_true",
+                          help="Print configuration and command without submitting")
+    hpc_dock.set_defaults(handler=_run_hpc_docking)
+
+    hpc_dyn = hpc_sub.add_parser("dynamics", formatter_class=_Fmt,
+                                 help="Submit molecular dynamics simulations to SLURM")
+    hpc_dyn.add_argument("dyn_type", choices=list(_DYN_SPEC.keys()), metavar="TYPE",
+                         help="Simulation type: " + " | ".join(_DYN_SPEC.keys()))
+    hpc_dyn.add_argument("-i", "--input-files", dest="input_files", action="append",
+                         metavar="FILE",
+                         help="Input file (repeatable, use for single-simulation mode)")
+    hpc_dyn.add_argument("--protein", dest="protein_file", metavar="PDB",
+                         help="Protein PDB file (use with --ligands for multi-simulation)")
+    hpc_dyn.add_argument("--ligands", dest="ligand_files", nargs="+", metavar="PDB",
+                         help="One or more ligand PDB files — one job per ligand")
+    hpc_dyn.add_argument("--time", "-t", type=float, default=100.0, metavar="NS",
+                         help="Simulation time in nanoseconds  [100.0]")
+    hpc_dyn.add_argument("--charge", type=int, default=0, metavar="Q",
+                         help="Ligand net charge  [0]")
+    hpc_dyn.add_argument("--nodes", metavar="NODELIST",
+                         help="SLURM nodelist (comma-separated) — distributes jobs across nodes")
+    hpc_dyn.add_argument("--partition", metavar="PARTITION",
+                         help="SLURM partition to submit to")
+    hpc_dyn.add_argument("--time-limit", dest="time_limit", default="72:00:00",
+                         metavar="HH:MM:SS",
+                         help="Wall time per job  [72:00:00]")
+    hpc_dyn.add_argument("--mem", default="0", metavar="MEM",
+                         help="Memory per job — use '0' for all available on the node  [0]")
+    hpc_dyn.add_argument("--cpus", type=int, default=8, metavar="N",
+                         help="CPUs per job  [8]")
+    hpc_dyn.add_argument("--replicate", action="store_true",
+                         help="Submit the same simulation to every node in --nodes (benchmark/comparison mode)")
+    hpc_dyn.add_argument("--mpi", action="store_true",
+                         help="Single simulation across all --nodes via MPI domain decomposition (test 1 GbE overhead)")
+    hpc_dyn.add_argument("--dry-run", action="store_true",
+                         help="Print configuration without submitting jobs")
+    hpc_dyn.set_defaults(handler=_run_hpc_dynamics)
+
+    return parser
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+def _print_banner() -> None:
+    logo = textwrap.dedent(LOGO).strip()
+    console.print(Text(logo, style="cyan"), justify="center")
+    console.print()
+    console.rule(
+        f"[bold cyan]ChemLink[/]  [dim]v{VERSION}[/]  [white]Molecular Simulation Toolkit[/]",
+        style="cyan",
+    )
+    console.print(
+        "[dim]Docking · Molecular Dynamics · Analysis[/]\n",
+        justify="center",
+    )
+
+
+def main() -> int:
+    try:
+        import argcomplete  # type: ignore
+        _has_argcomplete = True
+    except ImportError:
+        _has_argcomplete = False
+
+    parser = build_parser()
+
+    if _has_argcomplete:
+        argcomplete.autocomplete(parser)
+
+    if len(sys.argv) == 1:
+        _print_banner()
+        parser.print_help()
+        return 0
+
+    if sys.argv[1] in ("-h", "--help"):
+        _print_banner()
+
+    args = parser.parse_args()
+
+    if not hasattr(args, "handler"):
+        parser.parse_args([args.command, "--help"])
+        return 0
+
+    try:
+        return args.handler(args) or 0
+    except KeyboardInterrupt:
+        err_console.print(f"\n[yellow]Interrupted.[/]")
+        return 130
+    except Exception as exc:
+        err_console.print(f"\n[bold red]Error:[/] {exc}")
+        if os.environ.get("CHEMLINK_DEBUG"):
+            import traceback
+            traceback.print_exc()
+        else:
+            err_console.print(f"  [dim]Set CHEMLINK_DEBUG=1 for a full traceback.[/]\n")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
