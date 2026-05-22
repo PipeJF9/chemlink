@@ -4,12 +4,16 @@
   <img src="docs/chemlink-banner.png" alt="ChemLink Banner" width="480" />
 </div>
 
+<div align="center">
+
 ![ChemLink](https://img.shields.io/badge/ChemLink-v1.0.0-black?style=for-the-badge&logo=gnu-bash&logoColor=white)
 ![Estado](https://img.shields.io/badge/Estado-En_Desarrollo-orange?style=for-the-badge)
 ![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/Plataforma-Linux%20HPC-lightgrey?style=for-the-badge)
 
-## Resumen ejecutivo
+</div>
+
+## Resumen
 
 ChemLink es una plataforma de orquestación modular para química computacional desarrollada en el laboratorio Chemlab de la Universidad del Norte. Surge ante la necesidad de convertir una infraestructura HPC subutilizada —múltiples nodos con GPUs NVIDIA sin coordinación— en un entorno de cómputo científico automatizado, trazable y reproducible.
 
