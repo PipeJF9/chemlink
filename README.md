@@ -96,3 +96,7 @@ chemlink dynamics --help # opciones del pipeline de dinámica
 | Oscar Andrés Saurith Coronell — [@ousak20](https://github.com/ousak20) | Desarrollador de scripts |
 | José Elías Samur Benitez — [@jesamur](https://github.com/jesamur) | Colaborador en el desarrollo de scripts |
 | Francesco Genaro Rosa Chedraui — [@franzeskorch](https://github.com/franzeskorch) | Colaborador en el desarrollo de scripts |
+
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=PipeJF9/chemlink&type=Date)](https://star-history.com/#PipeJF9/chemlink&Date)
