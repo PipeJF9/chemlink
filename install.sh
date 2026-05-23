@@ -408,10 +408,11 @@ fi
 
 GMXRC_LINE='[ -f /usr/local/gromacs/bin/GMXRC ] && source /usr/local/gromacs/bin/GMXRC'
 
+PARENT_DIR="$(dirname "${INSTALL_DIR}")"
 ENTRY_POINT_CONTENT="#!/usr/bin/env bash
-export PYTHONPATH=\"${INSTALL_DIR}:\${PYTHONPATH:-}\"
+export PYTHONPATH=\"${PARENT_DIR}:\${PYTHONPATH:-}\"
 set +u; ${GMXRC_LINE}; set -u
-exec \"${PYTHON_BIN}\" -m cli.main \"\$@\""
+exec \"${PYTHON_BIN}\" -m chemlink.cli.main \"\$@\""
 
 # Choose bin dir: /usr/local/bin (system) or ~/.local/bin (user)
 if [[ "$EUID" -eq 0 ]] || $USE_SUDO; then
