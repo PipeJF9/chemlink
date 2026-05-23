@@ -238,39 +238,58 @@ else
     info "Conda env 'mgl_legacy' already exists — skipping creation."
   else
     info "Creating conda env 'mgl_legacy' (Python 2.7 + MGLTools legacy)…"
-    # Primary: official CCSB conda channel
-    # Fallback 1: direct tarball from CCSB
-    # Fallback 2: Wayback Machine mirror (used when ccsb.scripps.edu is unavailable)
-    MGLTOOLS_URLS=(
-      "https://ccsb.scripps.edu/download/532/"
-      "https://web.archive.org/web/2024/https://ccsb.scripps.edu/download/532/"
-    )
+    MGLTOOLS_INSTALLED=false
+
+    # Attempt 1: bioconda channel (actively maintained mirror)
+    info "Trying MGLTools via bioconda…"
     "$CONDA" create -n mgl_legacy -y --quiet --override-channels \
-      -c https://ccsb.scripps.edu/conda -c conda-forge \
-      python=2.7 mgltools 2>/dev/null || {
-        warn "MGLTools conda package failed — falling back to tarball install."
-        "$CONDA" create -n mgl_legacy -y --quiet python=2.7
-        MGLTOOLS_TMP="$(mktemp -d)"
-        MGLTOOLS_OK=false
-        for url in "${MGLTOOLS_URLS[@]}"; do
-          info "Trying MGLTools tarball: $url"
-          wget -q --timeout=30 "$url" -O "$MGLTOOLS_TMP/mgltools.tar.gz" && {
-            MGLTOOLS_OK=true; break
-          } || warn "Failed: $url"
-        done
-        if $MGLTOOLS_OK && [[ -s "$MGLTOOLS_TMP/mgltools.tar.gz" ]]; then
-          run_as_root mkdir -p /opt/mgltools
-          tar -xzf "$MGLTOOLS_TMP/mgltools.tar.gz" -C /opt/mgltools --strip-components=1
-          (cd /opt/mgltools && bash install.sh -d /opt/mgltools -c) || true
-          run_as_root ln -sf /opt/mgltools/bin/pythonsh /usr/local/bin/pythonsh 2>/dev/null || true
-        else
-          warn "All MGLTools download sources failed."
-          warn "Install manually from: https://ccsb.scripps.edu/mgltools/downloads/"
-          warn "Then re-run: bash install.sh --skip-conda"
-        fi
-        rm -rf "$MGLTOOLS_TMP"
-      }
-    success "Conda env 'mgl_legacy' ready"
+      -c bioconda -c conda-forge \
+      python=2.7 mgltools 2>/dev/null && MGLTOOLS_INSTALLED=true \
+      || warn "bioconda install failed."
+
+    # Attempt 2: official CCSB conda channel
+    if ! $MGLTOOLS_INSTALLED; then
+      info "Trying MGLTools via CCSB conda channel…"
+      "$CONDA" create -n mgl_legacy -y --quiet --override-channels \
+        -c https://ccsb.scripps.edu/conda -c conda-forge \
+        python=2.7 mgltools 2>/dev/null && MGLTOOLS_INSTALLED=true \
+        || warn "CCSB conda channel failed."
+    fi
+
+    # Attempt 3: tarball (CCSB direct → Wayback Machine snapshots)
+    if ! $MGLTOOLS_INSTALLED; then
+      warn "Conda install failed — falling back to tarball."
+      "$CONDA" create -n mgl_legacy -y --quiet python=2.7 2>/dev/null || true
+      MGLTOOLS_TMP="$(mktemp -d)"
+      MGLTOOLS_OK=false
+      MGLTOOLS_URLS=(
+        "https://ccsb.scripps.edu/download/532/"
+        "https://web.archive.org/web/20231201000000/https://ccsb.scripps.edu/download/532/"
+        "https://web.archive.org/web/20230601000000/https://ccsb.scripps.edu/download/532/"
+        "https://web.archive.org/web/20220601000000/https://ccsb.scripps.edu/download/532/"
+      )
+      for url in "${MGLTOOLS_URLS[@]}"; do
+        info "Trying: $url"
+        wget -q --timeout=60 "$url" -O "$MGLTOOLS_TMP/mgltools.tar.gz" \
+          && [[ $(wc -c < "$MGLTOOLS_TMP/mgltools.tar.gz") -gt 10000000 ]] && {
+          MGLTOOLS_OK=true; break
+        } || { warn "Failed or incomplete: $url"; rm -f "$MGLTOOLS_TMP/mgltools.tar.gz"; }
+      done
+      if $MGLTOOLS_OK; then
+        run_as_root mkdir -p /opt/mgltools
+        tar -xzf "$MGLTOOLS_TMP/mgltools.tar.gz" -C /opt/mgltools --strip-components=1
+        (cd /opt/mgltools && bash install.sh -d /opt/mgltools -c) || true
+        run_as_root ln -sf /opt/mgltools/bin/pythonsh /usr/local/bin/pythonsh 2>/dev/null || true
+        MGLTOOLS_INSTALLED=true
+      else
+        warn "All MGLTools sources failed."
+        warn "Manual install: https://ccsb.scripps.edu/mgltools/downloads/"
+        warn "Extract to /opt/mgltools and re-run: bash install.sh --skip-conda"
+      fi
+      rm -rf "$MGLTOOLS_TMP"
+    fi
+
+    $MGLTOOLS_INSTALLED && success "Conda env 'mgl_legacy' ready" || warn "mgl_legacy created without MGLTools."
   fi
 fi
 
