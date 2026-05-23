@@ -238,21 +238,35 @@ else
     info "Conda env 'mgl_legacy' already exists — skipping creation."
   else
     info "Creating conda env 'mgl_legacy' (Python 2.7 + MGLTools legacy)…"
+    # Primary: official CCSB conda channel
+    # Fallback 1: direct tarball from CCSB
+    # Fallback 2: Wayback Machine mirror (used when ccsb.scripps.edu is unavailable)
+    MGLTOOLS_URLS=(
+      "https://ccsb.scripps.edu/download/532/"
+      "https://web.archive.org/web/2024/https://ccsb.scripps.edu/download/532/"
+    )
     "$CONDA" create -n mgl_legacy -y --quiet --override-channels \
       -c https://ccsb.scripps.edu/conda -c conda-forge \
       python=2.7 mgltools 2>/dev/null || {
         warn "MGLTools conda package failed — falling back to tarball install."
         "$CONDA" create -n mgl_legacy -y --quiet python=2.7
         MGLTOOLS_TMP="$(mktemp -d)"
-        wget -q "https://ccsb.scripps.edu/download/532/" \
-             -O "$MGLTOOLS_TMP/mgltools.tar.gz" || {
-          warn "Could not download MGLTools tarball. Install manually from https://ccsb.scripps.edu/mgltools/"
-        }
-        if [[ -f "$MGLTOOLS_TMP/mgltools.tar.gz" ]]; then
+        MGLTOOLS_OK=false
+        for url in "${MGLTOOLS_URLS[@]}"; do
+          info "Trying MGLTools tarball: $url"
+          wget -q --timeout=30 "$url" -O "$MGLTOOLS_TMP/mgltools.tar.gz" && {
+            MGLTOOLS_OK=true; break
+          } || warn "Failed: $url"
+        done
+        if $MGLTOOLS_OK && [[ -s "$MGLTOOLS_TMP/mgltools.tar.gz" ]]; then
           run_as_root mkdir -p /opt/mgltools
           tar -xzf "$MGLTOOLS_TMP/mgltools.tar.gz" -C /opt/mgltools --strip-components=1
           (cd /opt/mgltools && bash install.sh -d /opt/mgltools -c) || true
           run_as_root ln -sf /opt/mgltools/bin/pythonsh /usr/local/bin/pythonsh 2>/dev/null || true
+        else
+          warn "All MGLTools download sources failed."
+          warn "Install manually from: https://ccsb.scripps.edu/mgltools/downloads/"
+          warn "Then re-run: bash install.sh --skip-conda"
         fi
         rm -rf "$MGLTOOLS_TMP"
       }
