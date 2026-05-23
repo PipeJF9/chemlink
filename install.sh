@@ -409,8 +409,10 @@ fi
 GMXRC_LINE='[ -f /usr/local/gromacs/bin/GMXRC ] && source /usr/local/gromacs/bin/GMXRC'
 
 PARENT_DIR="$(dirname "${INSTALL_DIR}")"
+MGL_ENV_PATH="${CONDA_BASE:-}/envs/mgl_legacy"
 ENTRY_POINT_CONTENT="#!/usr/bin/env bash
 export PYTHONPATH=\"${PARENT_DIR}:\${PYTHONPATH:-}\"
+export MGLTOOLS_PATH=\"${MGL_ENV_PATH}\"
 set +u; ${GMXRC_LINE}; set -u
 exec \"${PYTHON_BIN}\" -m chemlink.cli.main \"\$@\""
 

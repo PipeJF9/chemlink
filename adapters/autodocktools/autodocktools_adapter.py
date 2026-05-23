@@ -61,22 +61,39 @@ class AutoDockToolsAdapter:
     
     def _find_mgltools(self) -> Optional[str]:
         """Try to find MGLTools installation automatically."""
-        # Primero revisar variable de entorno (seteada por Lmod)
+        # 1. Explicit env var (highest priority)
         env_path = os.environ.get("MGLTOOLS_PATH")
         if env_path and os.path.exists(env_path):
             return env_path
 
-        common_paths = [
-            "/nfs/chemlink/miniconda/envs/mgl_legacy",
+        # 2. Build candidate list: fixed paths + conda env locations
+        candidates = [
             "/opt/mgltools",
             "/usr/local/mgltools",
+            "/nfs/chemlink/miniconda/envs/mgl_legacy",
             os.path.expanduser("~/mgltools"),
         ]
-        
-        for path in common_paths:
-            if os.path.exists(path):
+
+        # Add mgl_legacy env under every conda base we can find
+        conda_bases = [
+            os.environ.get("CONDA_PREFIX", ""),
+            os.path.expanduser("~/miniforge3"),
+            os.path.expanduser("~/miniconda3"),
+            os.path.expanduser("~/miniconda"),
+            os.path.expanduser("~/anaconda3"),
+            "/opt/miniforge3",
+            "/opt/miniconda3",
+            "/opt/miniconda",
+            "/opt/conda",
+        ]
+        for base in conda_bases:
+            if base:
+                candidates.append(os.path.join(base, "envs", "mgl_legacy"))
+
+        for path in candidates:
+            if path and os.path.isfile(os.path.join(path, "bin", "pythonsh")):
                 return path
-        
+
         return None
     
     def prepare_ligand(
