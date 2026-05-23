@@ -93,6 +93,6 @@ chemlink dynamics --help # opciones del pipeline de dinámica
 | Nombre | Rol |
 |---|---|
 | Edgar Alexander Márquez Brazon | Profesor a cargo del Laboratorio de Química Computacional |
-| Oscar Andrés Saurith Coronell — [@ousak](https://github.com/ousak) | Desarrollador de scripts |
+| Oscar Andrés Saurith Coronell — [@ousak20](https://github.com/ousak20) | Desarrollador de scripts |
 | José Elías Samur Benitez — [@jesamur](https://github.com/jesamur) | Colaborador en el desarrollo de scripts |
 | Francesco Genaro Rosa Chedraui — [@franzeskorch](https://github.com/franzeskorch) | Colaborador en el desarrollo de scripts |
