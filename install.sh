@@ -241,10 +241,11 @@ else
     MGLTOOLS_INSTALLED=false
 
     # Attempt 1: bioconda channel (actively maintained mirror)
+    # Pin numpy<1.17 to avoid UCS2/UCS4 Python 2.7 binary incompatibility
     info "Trying MGLTools via bioconda…"
     "$CONDA" create -n mgl_legacy -y --quiet --override-channels \
       -c bioconda -c conda-forge \
-      python=2.7 mgltools 2>/dev/null && MGLTOOLS_INSTALLED=true \
+      "python=2.7" "mgltools" "numpy>=1.11,<1.17" 2>/dev/null && MGLTOOLS_INSTALLED=true \
       || warn "bioconda install failed."
 
     # Attempt 2: official CCSB conda channel
