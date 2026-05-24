@@ -295,7 +295,7 @@ El resultado final del flujo dinámico incluye estadísticas estructurales, pane
 
 ![Diagrama de infraestructura del clúster HPC](../images/diagrams/diagrama-05-infraestructura-cluster.png)
 
-**Diagrama 5.** Topología física del clúster HPC del laboratorio, mostrando la interconexión entre el nodo manager (que aloja el servidor NFS), los nodos workers (que montan `/nfs/chemlink`), el nodo NAS OpenMediaVault (SMB/CIFS/Samba para almacenamiento personal), el switch de red y los servicios de monitoreo Prometheus/Grafana.
+**Diagrama 5.** Topología física del clúster HPC del laboratorio: un investigador accede mediante SSH/CLI al nodo manager centralizado (que aloja el Slurm Controller, servidor NFS y servicios Prometheus/Grafana), el cual coordina dos nodos workers equipados con CPU y GPU que ejecutan tareas mediante el Slurm Daemon; todos los nodos montan el almacenamiento compartido `/nfs/chemlink` y se conectan a través de un router de red, mientras que el NAS con SMB/CIFS/Samba proporciona almacenamiento personal independiente para los investigadores.
 
 ---
 
