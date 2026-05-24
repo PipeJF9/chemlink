@@ -528,8 +528,8 @@
           <ul class="r-changes">
             <li>Molecular docking pipeline: active site detection (fpocket), grid preparation (AutoGrid4), GPU-accelerated search (AutoDock-GPU) with 100% success rate on 1,000-ligand campaigns</li>
             <li>Molecular dynamics pipeline: GROMACS 2025.4 with CUDA + MPI support, covering 6 biological system types from topology preparation to trajectory analysis</li>
-            <li>Unified CLI (<code>chemlink docking</code> / <code>chemlink dynamics</code> / <code>chemlink doctor</code>) operating in single-node or SLURM Job Array distributed mode</li>
-            <li>HPC infrastructure: NFS v4 shared storage over OpenMediaVault, passwordless SSH cluster, Prometheus + Grafana monitoring</li>
+            <li>Unified CLI (<code>chemlink docking</code> / <code>chemlink dynamic</code> / <code>chemlink doctor</code>) operating in single-node or SLURM Job Array distributed mode</li>
+            <li>HPC infrastructure: OpenMediaVault NAS with NFS v4 (ChemLink computation) and SMB/CIFS/Samba (personal storage), passwordless SSH cluster, Prometheus + Grafana monitoring</li>
             <li>2.2× speedup validated with 3-node GPU configuration; experiment preparation reduced from 45 min to &lt;5 min</li>
           </ul>
         </div>
@@ -549,17 +549,10 @@
     <div class="docs-layout">
       <div class="docs-tab-bar">
         <div class="docs-tab-group">
-          <span class="d-group-label">Getting started</span>
           <div class="d-nav-item active" onclick="showDoc('install',this)">Installation</div>
           <div class="d-nav-item" onclick="showDoc('config',this)">Configuration</div>
-        </div>
-        <div class="docs-tab-group">
-          <span class="d-group-label">Reference</span>
           <div class="d-nav-item" onclick="showDoc('commands',this)">Commands</div>
           <div class="d-nav-item" onclick="showDoc('flags',this)">Flags &amp; options</div>
-        </div>
-        <div class="docs-tab-group">
-          <span class="d-group-label">Advanced</span>
           <div class="d-nav-item" onclick="showDoc('hpc',this)">HPC cluster guide</div>
         </div>
       </div>
@@ -576,6 +569,18 @@
             <li>CUDA Toolkit 12.x, OpenMPI, cmake (for <code>--full</code> install)</li>
             <li>SLURM (optional, for distributed mode)</li>
           </ul>
+          <div class="d-h3">Minimum tested hardware</div>
+          <p class="d-p">The benchmarks reported below were obtained on the following configuration. Any node that meets or exceeds these specs should replicate the published performance.</p>
+          <table class="cmd-table">
+            <tr><th>Component</th><th>Manager</th><th>worker1</th><th>worker2</th></tr>
+            <tr><td class="cn">CPU</td><td class="cd">Intel Core Ultra 9 285 (24 cores / 24 threads)</td><td class="cd">Intel Core i9-10900 est. (10 cores / 20 threads)</td><td class="cd">Intel Core i7-12700 (12 cores / 20 threads)</td></tr>
+            <tr><td class="cn">RAM</td><td class="cd">32 GB</td><td class="cd">64 GB</td><td class="cd">32 GB</td></tr>
+            <tr><td class="cn">GPU</td><td class="cd">RTX 5060 Ti 16 GB (Blackwell, sm_120)</td><td class="cd">RTX 3080 10 GB (Ampere, sm_86)</td><td class="cd">RTX 3060 LHR 12 GB (Ampere, sm_86)</td></tr>
+            <tr><td class="cn">Storage</td><td class="cd">SK Hynix NVMe SSD 1 TB</td><td class="cd">Samsung NVMe SSD 1 TB</td><td class="cd">Samsung NVMe SSD 1 TB</td></tr>
+            <tr><td class="cn">Network</td><td class="cd">Intel GbE + Wi-Fi 7</td><td class="cd">1 Gbps</td><td class="cd">Intel I219-LM GbE (1 Gbps)</td></tr>
+            <tr><td class="cn">OS</td><td class="cd">Ubuntu 24.04 LTS</td><td class="cd">Ubuntu 24.04 LTS</td><td class="cd">Ubuntu 24.04 LTS</td></tr>
+            <tr><td class="cn">CUDA</td><td class="cd">12.x</td><td class="cd">12.x</td><td class="cd">12.x</td></tr>
+          </table>
           <div class="d-h3">Quick install</div>
           <pre><span class="lang">bash</span><code><span class="cmt"># Installs ChemLink in /opt/chemlink with Conda envs bio + mgl_legacy</span>
 <span class="kw">curl</span> -fsSL https://raw.githubusercontent.com/PipeJF9/chemlink/main/install.sh | bash</code></pre>
@@ -595,7 +600,7 @@
           <div class="d-h3">Verify installation</div>
           <pre><span class="lang">bash</span><code>chemlink doctor          <span class="cmt"># check environment, GPU, and dependencies</span>
 chemlink docking <span class="fl">--help</span>  <span class="cmt"># docking pipeline options</span>
-chemlink dynamics <span class="fl">--help</span> <span class="cmt"># dynamics pipeline options</span></code></pre>
+chemlink dynamic <span class="fl">--help</span> <span class="cmt"># dynamics pipeline options</span></code></pre>
         </div>
 
         <div id="doc-config">
@@ -614,8 +619,13 @@ chemlink dynamics <span class="fl">--help</span> <span class="cmt"># dynamics pi
             <tr><td class="cn">CUDA_VISIBLE_DEVICES</td><td class="cd">Override visible GPUs for docking runs</td></tr>
             <tr><td class="cn">SLURM_ARRAY_TASK_ID</td><td class="cd">Set automatically by SLURM for distributed array jobs</td></tr>
           </table>
-          <div class="d-h3">NFS shared storage</div>
-          <p class="d-p">For multi-node runs, ChemLink expects input files and output directories to reside on a shared NFS filesystem accessible from all compute nodes (e.g., <code>/nfs/chemlink</code>).</p>
+          <div class="d-h3">Shared storage</div>
+          <p class="d-p">OpenMediaVault (OMV) acts as the central NAS and exposes two storage services with distinct purposes:</p>
+          <table class="cmd-table">
+            <tr><th>Protocol</th><th>Mount point</th><th>Purpose</th></tr>
+            <tr><td class="cn">NFS v4</td><td class="cd"><code>/nfs/chemlink</code></td><td class="cd">ChemLink computation — inputs, Conda envs, intermediates, and results. Mounted on every cluster node; required for all pipeline runs.</td></tr>
+            <tr><td class="cn">SMB/CIFS (Samba)</td><td class="cd">per-user share</td><td class="cd">Personal and team storage — accessible from Windows, macOS, and Linux. Used for backups, raw data, and researcher files. Not involved in ChemLink pipelines.</td></tr>
+          </table>
         </div>
 
         <div id="doc-commands">
@@ -624,7 +634,7 @@ chemlink dynamics <span class="fl">--help</span> <span class="cmt"># dynamics pi
           <table class="cmd-table">
             <tr><th>Command</th><th>Description</th></tr>
             <tr><td class="cn">chemlink docking</td><td class="cd">Run the molecular docking pipeline (fpocket → AutoGrid4 → AutoDock-GPU)</td></tr>
-            <tr><td class="cn">chemlink dynamics</td><td class="cd">Run the molecular dynamics pipeline (GROMACS 2025.4)</td></tr>
+            <tr><td class="cn">chemlink dynamic</td><td class="cd">Run the molecular dynamics pipeline (GROMACS 2025.4)</td></tr>
           </table>
           <div class="d-h3">Utility</div>
           <table class="cmd-table">
@@ -644,9 +654,9 @@ chemlink docking \
   <span class="fl">--ligands</span>  /nfs/chemlink/ligands/ \
   <span class="fl">--nodes</span>    4 \
   <span class="fl">--slurm</span></code></pre>
-          <div class="d-h3">Example: dynamics workflow</div>
+          <div class="d-h3">Example: dynamic workflow</div>
           <pre><span class="lang">bash</span><code><span class="cmt"># Protein-ligand MD simulation with GROMACS</span>
-chemlink dynamics \
+chemlink dynamic \
   <span class="fl">--system</span>  protein-ligand \
   <span class="fl">--input</span>   inputs/complex.pdb \
   <span class="fl">--out</span>     results/md/ \
@@ -665,7 +675,7 @@ chemlink dynamics \
             <tr><td class="cn">--slurm</td><td style="color:var(--white-3)">false</td><td class="cd">Submit via SLURM Job Array</td></tr>
             <tr><td class="cn">--dry-run</td><td style="color:var(--white-3)">false</td><td class="cd">Validate inputs without running</td></tr>
           </table>
-          <div class="d-h3">chemlink dynamics</div>
+          <div class="d-h3">chemlink dynamic</div>
           <table class="cmd-table">
             <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
             <tr><td class="cn">--system TYPE</td><td style="color:var(--white-3)">required</td><td class="cd">protein | protein-ligand | membrane | protein-membrane | ligand | custom</td></tr>
@@ -680,7 +690,7 @@ chemlink dynamics \
         <div id="doc-hpc">
           <div class="d-h2">HPC cluster guide</div>
           <div class="d-h3">Cluster requirements</div>
-          <p class="d-p">ChemLink is designed for a SLURM-managed cluster with NFS shared storage. All nodes must be reachable via passwordless SSH from the head node.</p>
+          <p class="d-p">ChemLink is designed for a SLURM-managed cluster with NFS shared storage. All nodes must be reachable via passwordless SSH from the head node. The lab NAS (OpenMediaVault) serves two protocols: <strong>NFS</strong> for ChemLink computation at <code>/nfs/chemlink</code>, and <strong>SMB/CIFS/Samba</strong> for personal and team file storage accessible from any OS — the two are independent and serve different purposes.</p>
           <pre><span class="lang">bash</span><code><span class="cmt"># Verify cluster connectivity</span>
 chemlink doctor --check cluster
 

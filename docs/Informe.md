@@ -86,6 +86,19 @@ Técnicamente, el sistema depende de la disponibilidad de hardware NVIDIA CUDA c
 
 Como supuesto fundamental, se asume que el aprovechamiento coordinado de los múltiples ordenadores del laboratorio permitirá reducir drásticamente el wall-clock time de los experimentos. Finalmente, se requiere un entorno Linux específico basado en Ubuntu 24.04 LTS y soporte para bibliotecas MPI para la ejecución multi-nodo de GROMACS [11].
 
+**Tabla 1. Especificaciones de hardware de los nodos probados.**
+
+| Componente | Nodo manager | worker1 | worker2 |
+|---|---|---|---|
+| CPU | Intel Core Ultra 9 285 (Arrow Lake, 24 núcleos / 24 hilos) | Intel Core i9-10900 est. (Comet Lake, 10 núcleos / 20 hilos) | Intel Core i7-12700 (Alder Lake, 12 núcleos / 20 hilos) |
+| RAM | 32 GB | 64 GB | 32 GB |
+| GPU | NVIDIA RTX 5060 Ti (Blackwell, sm_120) | NVIDIA RTX 3080 10 GB (Ampere, sm_86) | NVIDIA RTX 3060 LHR 12 GB (Ampere, sm_86) |
+| VRAM | 16 GB | 10 GB | 12 GB |
+| Almacenamiento | SK Hynix NVMe SSD 1 TB | Samsung NVMe SSD 1 TB | Samsung NVMe SSD 1 TB |
+| Red | Intel GbE + Wi-Fi 7 (1 Gbps cableado) | 1 Gbps | Intel I219-LM GbE (1 Gbps) |
+| Sistema operativo | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS |
+| CUDA | 12.x | 12.x | 12.x |
+
 ### 3.3 Alcance
 
 El alcance del proyecto comprende dos dimensiones complementarias. La primera es la infraestructura de cómputo distribuido, que incluye la organización básica del clúster, el acceso seguro entre nodos mediante SSH sin contraseña y el uso de almacenamiento compartido bajo NFS para que entradas, intermedios y resultados permanezcan disponibles de forma consistente durante todo el ciclo experimental. La segunda es la capa de software de orquestación, encargada de coordinar la secuencia lógica del trabajo científico y de traducirla en operaciones ejecutables sobre el hardware disponible.
@@ -361,9 +374,9 @@ Los requisitos mínimos de hardware se derivan de la configuración real de los 
 
 | Componente | Requisito mínimo verificado | Observación |
 |---|---|---|
-| **GPU** | NVIDIA RTX 3060 (12 GB VRAM, sm_86) | Arquitectura Ampere o superior; se requiere soporte CUDA 12.x |
-| **CPU** | 8 núcleos físicos por nodo | 8 cores por tarea GROMACS (parámetro `--cpus`); mínimo probado |
-| **RAM** | 16 GB por nodo trabajador | Suficiente para sistemas proteína + ligando; proteína + proteína requiere ≥ 32 GB |
+| **GPU** | NVIDIA RTX 3060 LHR 12 GB (Ampere, sm_86) | Rango probado: RTX 3060 LHR → RTX 3080 → RTX 5060 Ti; se requiere CUDA 12.x |
+| **CPU** | 10 núcleos físicos / 20 hilos por nodo | Configuración mínima en workers probados (worker1: 10 cores); 12 cores en worker2 |
+| **RAM** | 32 GB por nodo trabajador | worker2: 32 GB; worker1: 64 GB; proteína + proteína requiere ≥ 32 GB |
 | **Almacenamiento NFS** | Montaje de `/nfs/chemlink` accesible | Latencia y ancho de banda del NAS son determinantes en campañas grandes |
 | **Red** | 1 Gbps (mínimo operativo) | 10 Gbps recomendado para dinámicas multinodo con alta transferencia de trayectorias |
 | **Sistema operativo** | Ubuntu 24.04 LTS | Se requieren bibliotecas glibc ≥ 2.38 y soporte para OpenMPI |
