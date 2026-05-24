@@ -95,7 +95,7 @@ Como supuesto fundamental, se asume que el aprovechamiento coordinado de los mú
 | GPU | NVIDIA RTX 5060 Ti (Blackwell, sm_120) | NVIDIA RTX 3080 10 GB (Ampere, sm_86) | NVIDIA RTX 3060 LHR 12 GB (Ampere, sm_86) |
 | VRAM | 16 GB | 10 GB | 12 GB |
 | Almacenamiento | SK Hynix NVMe SSD 1 TB | Samsung NVMe SSD 1 TB | Samsung NVMe SSD 1 TB |
-| Red | Intel GbE + Wi-Fi 7 (1 Gbps cableado) | 1 Gbps | Intel I219-LM GbE (1 Gbps) |
+| Red | Intel GbE + Wi-Fi 7 (1 Gbps cableado) | Intel I219-LM GbE (1 Gbps) | Intel I219-LM GbE (1 Gbps) |
 | Sistema operativo | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS |
 | CUDA | 12.x | 12.x | 12.x |
 
