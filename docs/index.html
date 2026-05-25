@@ -580,7 +580,7 @@
             <li>Molecular docking pipeline: active site detection (fpocket), grid preparation (AutoGrid4), GPU-accelerated search (AutoDock-GPU) with 100% success rate on 1,000-ligand campaigns</li>
             <li>Molecular dynamics pipeline: GROMACS 2025.4 with CUDA + MPI support, covering 6 biological system types from topology preparation to trajectory analysis</li>
             <li>Unified CLI (<code>chemlink docking</code> / <code>chemlink dynamic</code> / <code>chemlink doctor</code>) operating in single-node or SLURM Job Array distributed mode</li>
-            <li>HPC infrastructure: Linux-native NFS v4 on manager node (ChemLink computation) + dedicated OpenMediaVault NAS with SMB/CIFS/Samba (personal storage), passwordless SSH cluster, Prometheus + Grafana monitoring</li>
+            <li>SLURM Job Array support: automatic ligand-set partitioning across GPU nodes with fault-tolerant per-ligand error isolation</li>
             <li>2.2× speedup validated with 3-node GPU configuration; experiment preparation reduced from 45 min to &lt;5 min</li>
           </ul>
         </div>
