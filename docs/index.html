@@ -400,9 +400,10 @@
       padding: 1.85rem 0;
     }
     .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-    .footer-logo { display: flex; align-items: center; gap: .48rem; }
-    .footer-logo img { height: 20px; opacity: .75; }
-    .footer-logo span { font-size: .83rem; color: var(--white-2); font-weight: 500; letter-spacing: .04em; }
+    .footer-logo { display: flex; align-items: center; }
+    .footer-logo img { height: 22px; opacity: .72; }
+    .footer-donate a { display:inline-flex; align-items:center; gap:.45rem; font-size:.76rem; color:var(--white-2); background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.13); border-radius:6px; padding:.32rem .7rem; transition:background .15s,color .15s; text-decoration:none; }
+    .footer-donate a:hover { background:rgba(255,255,255,.13); color:#fff; text-decoration:none; }
     .footer-links { display: flex; gap: 1.4rem; }
     .footer-links a { font-size: .76rem; color: var(--white-2); }
     .footer-links a:hover { color: var(--teal); text-decoration: none; }
@@ -515,10 +516,10 @@
 
 <!-- ARCHITECTURE -->
 <section id="architecture">
-  <div class="container">
+  <div class="wrap">
     <h2 class="s-title"><strong>Architecture</strong> overview</h2>
     <p class="s-body">ChemLink is built in five decoupled layers — CLI, pipelines, steps, adapters, and HPC infrastructure — so each scientific tool can be updated or swapped without touching the orchestration logic.</p>
-    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;padding:2rem;">
+    <div style="background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);border-radius:12px;overflow:hidden;padding:2rem;">
       <img src="architecture_diagram_visualizing_nbg.png"
            alt="ChemLink layered architecture diagram"
            style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:6px;" />
@@ -823,8 +824,7 @@ chemlink docking \
 <footer>
   <div class="wrap footer-inner">
     <div class="footer-logo">
-      <img src="icon.svg" alt="ChemLink" />
-      <span>ChemLink</span>
+      <img src="chemlink-banner-white.svg" alt="ChemLink" />
     </div>
     <div class="footer-links">
       <a href="#home">Home</a>
@@ -832,7 +832,12 @@ chemlink docking \
       <a href="#contribute">Contribute</a>
       <a href="https://github.com/PipeJF9/chemlink" target="_blank">GitHub</a>
     </div>
-    <div class="footer-copy">MIT License · Chemlab · Universidad del Norte · 2026</div>
+    <div class="footer-donate">
+      <a href="https://www.paypal.com/donate/?hosted_button_id=2GJFPY6AMBXX2" target="_blank" rel="noopener">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        Buy us a coffee
+      </a>
+    </div>
   </div>
 </footer>
 
