@@ -411,6 +411,25 @@
     .footer-copy { font-size: .7rem; color: var(--white-3); }
 
     /* RESPONSIVE */
+    /* diagram lightbox */
+    .diag-wrap { position: relative; }
+    .diag-expand {
+      position: absolute; top: .7rem; right: .7rem;
+      background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+      color: rgba(255,255,255,.75); padding: .32rem .36rem;
+      cursor: pointer; line-height: 0; transition: background .15s, color .15s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .diag-expand:hover { background: rgba(18,216,180,.25); color: #fff; border-color: rgba(18,216,180,.5); }
+    #diag-lightbox {
+      display: none; position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,.88); backdrop-filter: blur(10px);
+      align-items: center; justify-content: center; padding: 1.5rem; cursor: zoom-out;
+    }
+    #diag-lightbox.open { display: flex; }
+    #diag-lightbox img { max-width: 100%; max-height: 92vh; border-radius: 8px; box-shadow: 0 24px 80px rgba(0,0,0,.6); }
+
     @media (max-width: 800px) {
       nav { padding: 0 1.2rem; }
       .hero-grid { grid-template-columns: 1fr; }
@@ -520,7 +539,7 @@
   <div class="wrap">
     <h2 class="s-title"><strong>Architecture</strong> overview</h2>
     <p class="s-body">ChemLink is built in five decoupled layers — CLI, pipelines, steps, adapters, and HPC infrastructure — so each scientific tool can be updated or swapped without touching the orchestration logic.</p>
-    <div style="
+    <div class="diag-wrap" style="
         background: linear-gradient(135deg, rgba(18,216,180,.10) 0%, rgba(96,165,250,.08) 60%, rgba(155,93,229,.07) 100%);
         backdrop-filter: blur(18px) saturate(160%);
         -webkit-backdrop-filter: blur(18px) saturate(160%);
@@ -530,9 +549,17 @@
         padding: 2.5rem;
         overflow: hidden;
       ">
+      <button class="diag-expand" onclick="document.getElementById('diag-lightbox').classList.add('open')" title="Expand">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
       <img src="architecture_diagram_visualizing_nbgw.png"
            alt="ChemLink layered architecture diagram"
-           style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:4px;" />
+           style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:4px;cursor:zoom-in;"
+           onclick="document.getElementById('diag-lightbox').classList.add('open')" />
+    </div>
+
+    <div id="diag-lightbox" onclick="this.classList.remove('open')">
+      <img src="architecture_diagram_visualizing_nbgw.png" alt="ChemLink layered architecture diagram" />
     </div>
   </div>
 </section>
@@ -595,7 +622,8 @@
           </ul>
           <div class="d-h3">Minimum tested hardware</div>
           <p class="d-p">The benchmarks reported below were obtained on the following configuration. Any node that meets or exceeds these specs should replicate the published performance.</p>
-          <table class="cmd-table">
+          <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.7rem 0 1.4rem;">
+          <table class="cmd-table" style="min-width:560px;margin:0;">
             <tr><th>Component</th><th>Manager</th><th>worker1</th><th>worker2</th></tr>
             <tr><td class="cn">CPU</td><td class="cd">Intel Core Ultra 9 285 (24 cores / 24 threads)</td><td class="cd">Intel Core i9-10900 est. (10 cores / 20 threads)</td><td class="cd">Intel Core i7-12700 (12 cores / 20 threads)</td></tr>
             <tr><td class="cn">RAM</td><td class="cd">32 GB</td><td class="cd">64 GB</td><td class="cd">32 GB</td></tr>
@@ -605,6 +633,7 @@
             <tr><td class="cn">OS</td><td class="cd">Ubuntu 24.04 LTS</td><td class="cd">Ubuntu 24.04 LTS</td><td class="cd">Ubuntu 24.04 LTS</td></tr>
             <tr><td class="cn">CUDA</td><td class="cd">12.x</td><td class="cd">12.x</td><td class="cd">12.x</td></tr>
           </table>
+          </div>
           <div class="d-h3">Quick install</div>
           <pre><span class="lang">bash</span><code><span class="cmt"># Installs ChemLink in /opt/chemlink with Conda envs bio + mgl_legacy</span>
 <span class="kw">curl</span> -fsSL https://raw.githubusercontent.com/PipeJF9/chemlink/main/install.sh | bash</code></pre>
@@ -852,6 +881,10 @@ chemlink docking \
 </footer>
 
 <script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.getElementById('diag-lightbox').classList.remove('open');
+  });
+
   function setActive(el) {
     document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
     el.classList.add('active');
