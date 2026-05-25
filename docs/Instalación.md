@@ -415,24 +415,7 @@ docker compose down --rmi local
 
 ### 4.1 Arquitectura de despliegue
 
-```
-                    ┌──────────────────────────────────────────┐
-                    │          SWITCH LAN 1 Gbps               │
-                    └──┬──────────┬──────────┬─────────────────┘
-                       │          │          │
-              ┌────────┴───┐  ┌───┴────┐  ┌──┴─────────────────┐
-              │  MANAGER   │  │WORKER 1│  │   WORKER 2 / N     │
-              │ slurmctld  │  │slurmd  │  │   slurmd            │
-              │ NFS server │  │GPU x1  │  │   GPU x1            │
-              │ Prometheus │  └────────┘  └────────────────────┘
-              │ Grafana    │
-              └────────────┘
-                    │
-              ┌─────┴──────┐
-              │   NAS OMV  │
-              │/nfs/chemlink│  ← montado en TODOS los nodos
-              └────────────┘
-```
+![ChemLink deployment architecture](../images/diagrams/architecture_diagram_visualizing.png)
 
 El volumen NFS `/nfs/chemlink` contiene:
 - `/nfs/chemlink/chemlink/` — código fuente y módulo Lmod
