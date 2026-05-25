@@ -100,3 +100,11 @@ chemlink dynamics --help # opciones del pipeline de dinámica
 ## Star history
 
 [![Star History Chart](https://api.star-history.com/svg?repos=PipeJF9/chemlink&type=Date)](https://star-history.com/#PipeJF9/chemlink&Date)
+
+---
+
+## Support
+
+If ChemLink has been useful for your research, consider buying us a coffee to support continued development.
+
+[![Buy us a coffee](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=2GJFPY6AMBXX2)

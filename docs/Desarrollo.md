@@ -95,11 +95,6 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 │       ├── mdrun_runner.py
 │       └── utils.py
 ├── storage/
-├── tests/
-│   ├── docking/
-│   │   ├── single_node/      ← scripts de prueba por etapa (01–12 × min/opt)
-│   │   └── multinode/        ← scripts de prueba multinodo (01–05)
-│   └── dynamics/
 ├── utils/
 ├── chemlink                  ← entrypoint CLI (script ejecutable)
 ├── Dockerfile
@@ -134,14 +129,6 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 | `storage/file_manager.py` | Gestiona creación de directorios de corrida, búsqueda de archivos por patrón y división de bibliotecas multimolécula |
 | `utils/retry.py` | Estrategia de reintento con retroceso exponencial y fallback de comandos alternativos |
 | `utils/progress.py` | Indicadores de progreso basados en `rich` integrados con los pipelines |
-| `tests/docking/single_node/` | Scripts de prueba por etapa individual en nodo único: 12 pruebas × 2 configuraciones (min/opt), numeradas `01`–`12` |
-| `tests/docking/multinode/` | Scripts de prueba de docking multinodo SLURM: 5 pruebas numeradas `01`–`05` |
-| `tests/docking/run_docking_benchmark.sh` | Orquestador principal del benchmark completo de docking |
-| `tests/docking/run_pipeline_benchmark.sh` | Benchmark alternativo centrado en el pipeline completo end-to-end |
-| `tests/docking/collect_stats.py` | Recopila y consolida estadísticas de múltiples corridas de benchmark |
-| `tests/docking/monitor_local.py` | Muestrea CPU, GPU, RAM, disco y red a intervalos configurables durante una ejecución local |
-| `tests/docking/monitor_job.py` | Monitorea los mismos recursos para trabajos SLURM activos vía `sacct` |
-| `tests/dynamics/` | Suite de benchmarks de dinámica: `run_dynamics_benchmark.sh` (6 tipos de simulación), `common.sh`, `monitor_job.py` |
 | `Dockerfile` | Imagen todo-en-uno: Ubuntu 24.04 + CUDA 13.0 + GROMACS 2025.4 + AutoDock-GPU + AutoGrid4 + fpocket + MGLTools + Conda |
 | `docker-compose.yml` | Servicio `chemlink-gpu` con acceso a todas las GPUs del host |
 | `requirements.txt` | Dependencias Python del entorno `bio` (instaladas en el contenedor) |
@@ -184,7 +171,6 @@ El acoplamiento entre capas es deliberadamente bajo: los pipelines no invocan bi
 | Detección de hardware | `hpc/cluster/resource_detector.py`, `network_detector.py` |
 | Orquestación SLURM (docking) | `hpc/slurm/native/run_multinode_pipeline.sh` + scripts `*.slurm` |
 | Orquestación SLURM (dinámica) | `hpc/slurm/runner/dynamics_runner.py` + `native/dynamics.slurm` |
-| Benchmarks y monitoreo | `tests/docking/run_docking_benchmark.sh`, `monitor_local.py`, `monitor_job.py` |
 
 ---
 
@@ -259,28 +245,15 @@ docker compose exec chemlink-gpu chemlink docking full \
 | `chemlink hpc docking --receptor-dir ... --ligand-dir ... --nodes ...` | Genera y envía la cadena de trabajos SLURM para docking en modo HPC (nodo único o multinodo) |
 | `chemlink dynamics full --complex ... --ligand ... --time ...` | Ejecuta el pipeline completo de dinámica molecular |
 
-### 6.2 Scripts auxiliares y de benchmarks
+### 6.2 Scripts auxiliares de SLURM
 
 | Script | Ubicación | Descripción |
 |---|---|---|
-| `run_docking_benchmark.sh` | `tests/docking/` | Orquestador principal del benchmark de docking; lanza todas las escalas y modos |
-| `run_pipeline_benchmark.sh` | `tests/docking/` | Benchmark end-to-end del pipeline completo con reporte consolidado |
-| `run_all_single.sh` | `tests/docking/` | Ejecuta en secuencia todos los scripts de prueba de `single_node/` |
-| `single_node/01–12_*.sh` | `tests/docking/single_node/` | Scripts de prueba por etapa individual, 12 pruebas × 2 configuraciones (min/opt) |
-| `multinode/01–05_*.sh` | `tests/docking/multinode/` | Scripts de prueba de docking multinodo sobre SLURM (escalas 10/100/1000 ligandos) |
-| `collect_stats.py` | `tests/docking/` | Recopila y consolida estadísticas de múltiples corridas de benchmark en un CSV único |
-| `monitor_local.py` | `tests/docking/` | Muestrea CPU, GPU, RAM, disco y red a intervalos configurables durante una ejecución local |
-| `monitor_job.py` | `tests/docking/` y `tests/dynamics/` | Monitorea los mismos recursos para trabajos SLURM activos vía `sacct` |
-| `run_dynamics_benchmark.sh` | `tests/dynamics/` | Ejecuta los 6 tipos de simulación de dinámica y registra tiempos de ejecución |
-| `common.sh` (docking) | `tests/docking/` | Variables compartidas: rutas, workers por modo, parámetros multinodo |
-| `common.sh` (dinámica) | `tests/dynamics/` | Variables compartidas para la suite de benchmarks de dinámica |
 | `run_multinode_pipeline.sh` | `hpc/slurm/native/` | Lanza la secuencia completa de trabajos SLURM encadenados para docking multinodo |
 | `run_dynamics_pipeline.sh` | `hpc/slurm/native/` | Lanza el trabajo SLURM de dinámica molecular |
 
 ### 6.3 Consideraciones para su uso
 
-- Los scripts de benchmarks requieren que el entorno esté activo (`module load chemlink/1.0`) y que el directorio de fixtures exista (`tests/docking/fixtures/ligands_10/`, `ligands_100/`, `ligands_1000/`). Generarlos con `tests/docking/fixtures/setup_fixtures.sh` si no están presentes.
-- `monitor_local.py` y `monitor_job.py` requieren el entorno Python `bio` y la biblioteca `psutil` disponible.
 - Los scripts SLURM de `hpc/slurm/native/` asumen que `REPO_DIR`, `OUTPUT_DIR` y `PYTHON_BIN` están definidos como variables de entorno antes de ser enviados por `sbatch`. El runner Python (`hpc/slurm/runner/dynamics_runner.py`) los inyecta automáticamente.
 - Los scripts de `hpc/slurm/container/` requieren que Docker y `nvidia-container-toolkit` estén instalados en todos los nodos del clúster.
 
@@ -327,7 +300,7 @@ ChemLink no usa archivos `.env` ni gestores de secretos: toda la configuración 
 **Lo que no debe subirse al repositorio:**
 - Claves privadas SSH de los nodos (`~/.ssh/id_rsa`); las claves son locales a cada nodo del clúster.
 - Archivos de topología o datos de entrada propietarios en `data/input/`.
-- Salidas de corridas en `data/output/` y `tests/docking/results/` — pueden ser grandes y contienen datos experimentales; están en `.gitignore`.
+- Salidas de corridas en `data/output/` — pueden ser grandes y contienen datos experimentales; están en `.gitignore`.
 
 ---
 
@@ -384,23 +357,23 @@ fix/<descripción-breve>           ← corrección de errores (hotfixes, bugfixe
 
 ### 8.3 Ejecución de pruebas y validaciones
 
-No existe un framework de pruebas unitarias automatizado (pytest) en el estado actual del proyecto. La validación se realiza mediante las suites de benchmarks integradas:
+No existe un framework de pruebas unitarias automatizado (pytest) en el estado actual del proyecto. La validación se realiza ejecutando los pipelines directamente sobre hardware real:
 
 ```bash
-# Benchmark completo de docking (9 pruebas, requiere fixtures y ~2h)
-bash tests/docking/run_docking_benchmark.sh
-
-# Benchmark de dinámica molecular (6 tipos, requiere ~8h con hardware completo)
-bash tests/dynamics/run_dynamics_benchmark.sh
-
-# Prueba rápida de un modo específico (10 ligandos, modo local)
-chemlink docking full \
-  data/input/receptors \
-  tests/docking/fixtures/ligands_10 \
-  /tmp/test_run
-
 # Verificación de integración del entorno
 chemlink doctor
+
+# Prueba rápida de docking (10 ligandos, modo local)
+chemlink docking full \
+  data/input/receptors \
+  data/input/ligands \
+  /tmp/test_run
+
+# Prueba rápida de dinámica (0.1 ns, proteína-ligando)
+chemlink dynamic full \
+  --system protein-ligand \
+  --input data/input/complex.pdb \
+  --out /tmp/test_md
 ```
 
 Antes de integrar cambios, verificar manualmente:
@@ -430,7 +403,7 @@ gh pr create --title "Add: <descripción>" --base develop
 **Criterios mínimos para integrar a `develop`:**
 - `chemlink doctor` pasa sin errores.
 - El pipeline afectado completa una prueba con la escala mínima (10 ligandos / 0.1 ns).
-- No se introducen rutas absolutas hardcodeadas fuera de las variables de entorno establecidas en `common.sh`.
+- No se introducen rutas absolutas hardcodeadas fuera de las variables de entorno.
 - Los nuevos scripts SLURM siguen la convención de parametrización por variables de entorno (sin valores fijos de partición, nodos o rutas en el script).
 
 ---
@@ -547,7 +520,7 @@ Para que un equipo nuevo pueda trabajar sobre el proyecto necesita:
 | Commits | Prefijo descriptivo: `Add:`, `Fix:`, `Refactor:`, `Update:`, `Remove:`; mensaje en inglés; una idea por commit |
 | Pull Requests | Siempre hacia `develop`; descripción con contexto del cambio y cómo probarlo |
 | Releases | Tags semánticos `vX.X.X` sobre `main`; publicados como GitHub Release (ver §8.5) |
-| Archivos ignorados | `data/output/`, `tests/docking/results/`, `tests/dynamics/results/`, `__pycache__/`, `*.egg-info/`, archivos `.pyc` |
+| Archivos ignorados | `data/output/`, `__pycache__/`, `*.egg-info/`, archivos `.pyc` |
 
 ### 10.3 Convenciones de documentación
 

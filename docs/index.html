@@ -513,6 +513,19 @@
   </div>
 </section>
 
+<!-- ARCHITECTURE -->
+<section id="architecture" style="padding:4rem 0 3rem;">
+  <div class="container">
+    <h2 class="s-title" style="margin-bottom:0.6rem;"><strong>Architecture</strong> overview</h2>
+    <p style="color:var(--white-2);font-size:.97rem;margin-bottom:2rem;max-width:640px;">ChemLink is built in five decoupled layers — CLI, pipelines, steps, adapters, and HPC infrastructure — so each scientific tool can be updated or swapped without touching the orchestration logic.</p>
+    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;text-align:center;padding:1.5rem;">
+      <img src="../images/diagrams/architecture_diagram_visualizing_nbg.png"
+           alt="ChemLink layered architecture diagram"
+           style="max-width:100%;height:auto;border-radius:6px;" />
+    </div>
+  </div>
+</section>
+
 <!-- RELEASES -->
 <section id="releases">
   <div class="wrap">
@@ -691,6 +704,11 @@ chemlink dynamic \
           <div class="d-h2">HPC cluster guide</div>
           <div class="d-h3">Cluster requirements</div>
           <p class="d-p">ChemLink is designed for a SLURM-managed cluster with NFS shared storage. All nodes must be reachable via passwordless SSH from the head node. The cluster uses two independent storage systems: <strong>NFS v4</strong> served by the Linux kernel on the manager node (exports <code>/nfs/chemlink</code>, mounted on all compute nodes — this is what ChemLink uses), and a dedicated <strong>OpenMediaVault NAS node</strong> that serves <strong>SMB/CIFS/Samba</strong> for personal and team file storage accessible from any OS. The two are fully independent and serve different purposes.</p>
+          <div style="margin:1.2rem 0;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden;text-align:center;padding:1rem;">
+            <img src="../images/diagrams/diagram-05-cluster-infrastructure.png"
+                 alt="HPC cluster deployment diagram"
+                 style="max-width:100%;height:auto;border-radius:4px;" />
+          </div>
           <pre><span class="lang">bash</span><code><span class="cmt"># Verify cluster connectivity</span>
 chemlink doctor --check cluster
 
