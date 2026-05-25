@@ -80,9 +80,10 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 │       ├── container/
 │       ├── native/
 │       └── runner/
-├── images/
-│   ├── diagrams/             ← architecture diagrams (PNG)
-│   └── figures/              ← performance charts (PNG)
+├── docs/
+│   └── images/
+│       ├── diagrams/         ← architecture diagrams (PNG)
+│       └── figures/          ← performance charts (PNG)
 ├── pipelines/
 │   ├── docking/
 │   │   └── steps/
@@ -116,8 +117,8 @@ Ambos pipelines se exponen mediante una CLI unificada y pueden ejecutarse en mod
 | `hpc/slurm/native/` | Scripts SLURM para ejecución bare-metal sobre NFS; incluye variantes para cada etapa del pipeline y para dinámica molecular (`dynamics.slurm`, `dynamics_mpi.slurm`) |
 | `hpc/slurm/container/` | Scripts SLURM equivalentes para ejecución dentro del contenedor Docker |
 | `hpc/slurm/runner/dynamics_runner.py` | Orquestador Python que construye y envía la cadena de trabajos SLURM para dinámica multinodo |
-| `images/diagrams/` | Architecture, sequence and module interaction diagrams (PNG) |
-| `images/figures/` | Performance and resource utilization charts from benchmarks (PNG) |
+| `docs/images/diagrams/` | Architecture, sequence and module interaction diagrams (PNG) |
+| `docs/images/figures/` | Performance and resource utilization charts from benchmarks (PNG) |
 | `pipelines/docking/steps/` | Un archivo por etapa: `receptor_preparation.py`, `ligand_preparation.py`, `active_site_detection.py`, `docking_execution.py`, `docking_analysis.py` |
 | `pipelines/dynamics/steps/` | Un archivo por etapa: `complex_builder.py`, `ligand_topology.py`, `topology.py`, `solvation.py`, `ions.py`, `energy_min.py`, `equilibration.py`, `production.py`, `post_processing.py`, `analysis.py` |
 | `pipelines/dynamics/gmx_optimizer.py` | Calcula los parámetros óptimos de `gmx mdrun` (threads, GPUs, PME) según el hardware detectado |

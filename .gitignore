@@ -217,5 +217,9 @@ mdout.mdp
 
 
 data/*
+!data/test/
+!data/test/**
 tests/*
 scripts/*
+!scripts/gen_all_figures.py
+!scripts/gen_poster_figures.py

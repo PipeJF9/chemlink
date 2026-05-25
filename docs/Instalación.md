@@ -415,7 +415,7 @@ docker compose down --rmi local
 
 ### 4.1 Arquitectura de despliegue
 
-![ChemLink deployment architecture](../images/diagrams/architecture_diagram_visualizing.png)
+![ChemLink deployment architecture](images/diagrams/architecture_diagram_visualizing.png)
 
 El volumen NFS `/nfs/chemlink` contiene:
 - `/nfs/chemlink/chemlink/` — código fuente y módulo Lmod

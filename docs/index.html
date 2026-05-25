@@ -540,26 +540,26 @@
     <h2 class="s-title"><strong>Architecture</strong> overview</h2>
     <p class="s-body">ChemLink is built in five decoupled layers — CLI, pipelines, steps, adapters, and HPC infrastructure — so each scientific tool can be updated or swapped without touching the orchestration logic.</p>
     <div class="diag-wrap" style="
-        background: linear-gradient(135deg, rgba(18,216,180,.10) 0%, rgba(96,165,250,.08) 60%, rgba(155,93,229,.07) 100%);
+        background: linear-gradient(135deg, rgba(240,255,252,.96) 0%, rgba(235,245,255,.96) 60%, rgba(248,242,255,.96) 100%);
         backdrop-filter: blur(18px) saturate(160%);
         -webkit-backdrop-filter: blur(18px) saturate(160%);
-        border: 1px solid rgba(18,216,180,.25);
+        border: 1px solid rgba(18,216,180,.45);
         border-radius: 16px;
-        box-shadow: 0 8px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+        box-shadow: 0 8px 32px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.9);
         padding: 2.5rem;
         overflow: hidden;
       ">
       <button class="diag-expand" onclick="document.getElementById('diag-lightbox').classList.add('open')" title="Expand">
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
-      <img src="architecture_diagram_visualizing_nbgw.png"
+      <img src="images/diagrams/architecture_diagram_visualizing_nbg.png"
            alt="ChemLink layered architecture diagram"
            style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:4px;cursor:zoom-in;"
            onclick="document.getElementById('diag-lightbox').classList.add('open')" />
     </div>
 
     <div id="diag-lightbox" onclick="this.classList.remove('open')">
-      <img src="architecture_diagram_visualizing_nbgw.png" alt="ChemLink layered architecture diagram" />
+      <img src="images/diagrams/architecture_diagram_visualizing_nbg.png" alt="ChemLink layered architecture diagram" />
     </div>
   </div>
 </section>
