@@ -415,16 +415,16 @@
     .diag-wrap { position: relative; }
     .diag-expand {
       position: absolute; top: .7rem; right: .7rem;
-      background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
-      border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
-      color: rgba(255,255,255,.75); padding: .32rem .36rem;
-      cursor: pointer; line-height: 0; transition: background .15s, color .15s;
+      background: rgba(255,255,255,.65); backdrop-filter: blur(8px);
+      border: 1px solid rgba(18,216,180,.35); border-radius: 8px;
+      color: rgba(30,40,60,.65); padding: .32rem .36rem;
+      cursor: pointer; line-height: 0; transition: background .15s, color .15s, border-color .15s;
       display: flex; align-items: center; justify-content: center;
     }
-    .diag-expand:hover { background: rgba(18,216,180,.25); color: #fff; border-color: rgba(18,216,180,.5); }
+    .diag-expand:hover { background: rgba(18,216,180,.18); color: rgba(10,120,100,1); border-color: rgba(18,216,180,.7); }
     #diag-lightbox {
       display: none; position: fixed; inset: 0; z-index: 9999;
-      background: rgba(0,0,0,.88); backdrop-filter: blur(10px);
+      background: rgba(200,220,230,.55); backdrop-filter: blur(14px);
       align-items: center; justify-content: center; padding: 1.5rem; cursor: zoom-out;
     }
     #diag-lightbox.open { display: flex; }
@@ -540,12 +540,14 @@
     <h2 class="s-title"><strong>Architecture</strong> overview</h2>
     <p class="s-body">ChemLink is built in five decoupled layers — CLI, pipelines, steps, adapters, and HPC infrastructure — so each scientific tool can be updated or swapped without touching the orchestration logic.</p>
     <div class="diag-wrap" style="
-        background: linear-gradient(135deg, rgba(240,255,252,.96) 0%, rgba(235,245,255,.96) 60%, rgba(248,242,255,.96) 100%);
-        backdrop-filter: blur(18px) saturate(160%);
-        -webkit-backdrop-filter: blur(18px) saturate(160%);
-        border: 1px solid rgba(18,216,180,.45);
-        border-radius: 16px;
-        box-shadow: 0 8px 32px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.9);
+        background: linear-gradient(135deg, rgba(255,255,255,.72) 0%, rgba(240,252,250,.78) 50%, rgba(245,242,255,.72) 100%);
+        backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
+        -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
+        border: 1px solid rgba(255,255,255,.85);
+        border-bottom: 1px solid rgba(18,216,180,.35);
+        border-right: 1px solid rgba(96,165,250,.25);
+        border-radius: 20px;
+        box-shadow: 0 8px 40px rgba(0,0,0,.08), 0 1.5px 0 rgba(255,255,255,.9) inset, 0 -1px 0 rgba(18,216,180,.15) inset;
         padding: 2.5rem;
         overflow: hidden;
       ">
@@ -554,12 +556,31 @@
       </button>
       <img src="images/diagrams/architecture_diagram_visualizing_nbg.png"
            alt="ChemLink layered architecture diagram"
-           style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:4px;cursor:zoom-in;"
+           style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:8px;cursor:zoom-in;"
            onclick="document.getElementById('diag-lightbox').classList.add('open')" />
     </div>
 
     <div id="diag-lightbox" onclick="this.classList.remove('open')">
-      <img src="images/diagrams/architecture_diagram_visualizing_nbg.png" alt="ChemLink layered architecture diagram" />
+      <div style="
+          background: linear-gradient(135deg, rgba(255,255,255,.82) 0%, rgba(240,252,250,.86) 50%, rgba(245,242,255,.82) 100%);
+          backdrop-filter: blur(32px) saturate(180%) brightness(1.05);
+          -webkit-backdrop-filter: blur(32px) saturate(180%) brightness(1.05);
+          border: 1px solid rgba(255,255,255,.9);
+          border-bottom: 1px solid rgba(18,216,180,.3);
+          border-radius: 24px;
+          box-shadow: 0 24px 80px rgba(0,0,0,.18), 0 2px 0 rgba(255,255,255,.95) inset;
+          padding: 2rem;
+          max-width: 96vw;
+          max-height: 94vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: zoom-out;
+        " onclick="event.stopPropagation()">
+        <img src="images/diagrams/architecture_diagram_visualizing_nbg.png"
+             alt="ChemLink layered architecture diagram"
+             style="max-width:100%;max-height:88vh;border-radius:8px;display:block;" />
+      </div>
     </div>
   </div>
 </section>
