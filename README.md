@@ -1,7 +1,7 @@
 # ChemLink
 
 <div align="center">
-  <img src="docs/chemlink-banner.png" alt="ChemLink Banner" width="480" />
+  <img src="docs/chemlink-banner.svg" alt="ChemLink Banner" width="480" />
 </div>
 
 <div align="center">
