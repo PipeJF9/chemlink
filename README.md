@@ -15,7 +15,7 @@
 
 ## Resumen
 
-ChemLink es una plataforma de orquestación modular para química computacional desarrollada en el laboratorio Chemlab de la Universidad del Norte. Surge ante la necesidad de convertir una infraestructura HPC subutilizada —múltiples nodos con GPUs NVIDIA sin coordinación— en un entorno de cómputo científico automatizado, trazable y reproducible.
+ChemLink es una plataforma de orquestación modular para química computacional desarrollada en el Laboratorio de Química y Biología Computacional de la Universidad del Norte. Surge ante la necesidad de convertir una infraestructura HPC subutilizada —múltiples nodos con GPUs NVIDIA sin coordinación— en un entorno de cómputo científico automatizado, trazable y reproducible.
 
 La plataforma automatiza dos flujos experimentales: el pipeline de **docking molecular**, que coordina la detección de sitios activos (fpocket), la preparación de estructuras (MGLTools/AutoGrid4) y la búsqueda conformacional en GPU (AutoDock-GPU); y el pipeline de **dinámica molecular**, que estructura la simulación completa con GROMACS desde la preparación de topologías hasta el análisis de trayectorias, soportando seis tipos de sistemas biológicos. Ambos pipelines operan bajo una CLI unificada en modo nodo único o distribuido mediante Job Arrays de SLURM.
 
